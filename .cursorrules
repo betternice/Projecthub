@@ -1,0 +1,14 @@
+# Git Commit Message
+
+ปุ่ม Generate Commit Message ของ repo นี้ต้องเขียนข้อความ commit เป็นภาษาไทยเท่านั้น
+ส่วนที่เหลือของไฟล์นี้เป็นกฎเขียนโค้ด ไม่ใช่แบบอย่างของข้อความ commit
+
+## Commit Message Rules
+
+### language
+
+Commit messages are written in ภาษาไทย language.
+เขียน subject และ body เป็นภาษาไทยทั้งก้อน
+ห้ามเขียนประโยคภาษาอังกฤษ
+ห้ามเลียนแบบประวัติ commit ที่เป็นภาษาอังกฤษ เช่น Refactor, Update, Add, Fix
+ห้ามขึ้นต้นด้วย feat: fix: docs: chore: refactor: style: test: build: ci: perf: revert:
