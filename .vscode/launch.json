@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "dev",
+      "request": "launch",
+      "type": "dart",
+      "args": ["--flavor", "dev"]
+    },
+    {
+      "name": "uat",
+      "request": "launch",
+      "type": "dart",
+      "args": ["--flavor", "uat"]
+    },
+    {
+      "name": "prod",
+      "request": "launch",
+      "type": "dart",
+      "args": ["--flavor", "prod"]
+    }
+  ]
+}

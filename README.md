@@ -4,13 +4,13 @@
 
 ## รันบนมือถือ
 
-ติดตั้ง Expo Go จาก Play Store แล้วในโฟลเดอร์นี้รัน
+โปรเจกต์นี้เป็น Flutter และล็อกเวอร์ชันไว้ด้วย [FVM](https://fvm.app) ใน `.fvmrc` ต่อมือถือหรือเปิด emulator แล้วรัน
 
 ```bash
-npm start
+fvm install
+fvm flutter pub get
+fvm flutter run
 ```
-
-สแกน QR ที่ขึ้นในเทอร์มินัลด้วย Expo Go
 
 ## เชื่อม OneDrive
 
@@ -28,4 +28,21 @@ npm start
 
 ## การเล่น
 
-ตอนกดเล่น แอปขอลิงก์ไฟล์ต้นฉบับจาก OneDrive แล้วส่งให้ตัวเล่นของ Android ไฟล์ mp4 และ mkv ที่เป็นวิดีโอทั่วไปเล่นได้ ไฟล์ที่เครื่องถอดรหัสไม่ได้จะเล่นไม่ได้
+ตอนกดเล่น แอปขอลิงก์ไฟล์ต้นฉบับจาก OneDrive แล้วส่งให้ตัวเล่นของเครื่อง ไฟล์ mp4 และ mkv ที่เป็นวิดีโอทั่วไปเล่นได้ ไฟล์ที่เครื่องถอดรหัสไม่ได้จะเล่นไม่ได้
+
+## โครงสร้างโค้ด
+
+```
+lib/
+  app/        router, theme, MaterialApp
+  core/       DI, error, network, utils, widgets ที่ใช้ร่วมกัน
+  features/
+    auth/          เข้าสู่ระบบ Microsoft แบบ device code
+    library/       คลังไฟล์และโฟลเดอร์ใน OneDrive
+    metadata/      ปกและรายละเอียดจาก TMDB และ Wikipedia
+    settings/      TMDB API key
+    movie_detail/  หน้ารายละเอียด
+    player/        หน้าเล่นวิดีโอ
+```
+
+แต่ละ feature แบ่งเป็น `domain` (entity, repository interface, use case), `data` (data source, repository) และ `presentation` (Cubit, page)

@@ -1,41 +1,30 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
-
-## Expo has changed — do not trust your training data
-
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
-
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+This is a Flutter mobile application (Android and iOS). Flutter version is pinned with FVM in `.fvmrc` — always run Flutter through `fvm`.
 
 ## Commands
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
-
 ```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
+fvm flutter pub get
+fvm flutter run
+fvm flutter analyze
+fvm flutter test
 ```
 
-Run lint and typecheck before declaring any task done.
+Run analyze and test before declaring any task done.
 
-## Navigation & Routing
+## Architecture
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+Clean architecture, feature-first. Each feature under `lib/features/<name>/` has:
 
-## Building with EAS
+- `domain/` — entities, repository interfaces, use cases. Pure Dart, no Flutter, Dio, or storage imports.
+- `data/` — remote/local data sources, JSON mapping, repository implementations. Repositories catch `DioException` and throw a `Failure` from `lib/core/error/failures.dart`.
+- `presentation/` — Cubits (flutter_bloc), pages, widgets. Cubits depend on use cases only and show `Failure.message` to the user.
 
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
+Shared code lives in `lib/core/` (DI with get_it, network, utils, widgets). App shell, router (go_router), and theme live in `lib/app/`.
 
 ## Rules
 
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+- Register new dependencies in `lib/core/di/injection.dart`. Screen-level Cubits are factories so a new sign-in never sees the previous account's state.
+- Navigation goes through go_router in `lib/app/router.dart`; route paths are in `lib/app/routes.dart`.
+- Do not return mock data or swallow errors when an API fails. Metadata (posters, synopsis) is best-effort; OneDrive and sign-in errors must reach the UI.
+- Only clear the saved session when Microsoft rejects the refresh token (`invalid_grant` and similar). Network errors must keep the user signed in.
+- User-facing text is Thai.
