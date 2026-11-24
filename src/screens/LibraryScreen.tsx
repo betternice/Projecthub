@@ -17,6 +17,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Poster } from '../components/Poster';
+import { ConnectSheet } from './ConnectSheet';
 import { useAuth } from '../auth/AuthContext';
 import { presentTitle } from '../format';
 import { lookupMedia, type MediaMatch } from '../metadata/tmdb';
@@ -39,13 +40,14 @@ type LibraryMovie = {
 export function LibraryScreen({ onOpen }: LibraryProps) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { session, tmdbKey, setTmdbKey, signOut, getToken } = useAuth();
+  const { session, tmdbKey, setTmdbKey, getToken } = useAuth();
   const [folders, setFolders] = useState<FolderCrumb[] | null>(null);
   const [items, setItems] = useState<DriveItem[]>([]);
   const [matches, setMatches] = useState<Record<string, MediaMatch | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [tmdbDraft, setTmdbDraft] = useState(tmdbKey ?? '');
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -95,6 +97,13 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
     if (!current) return undefined;
     let cancelled = false;
     const load = async () => {
+      if (!session) {
+        setLoading(false);
+        setError(null);
+        setItems([]);
+        setMatches({});
+        return;
+      }
       setLoading(true);
       setError(null);
       setItems([]);
@@ -113,7 +122,7 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
     return () => {
       cancelled = true;
     };
-  }, [current, getToken, reloadKey]);
+  }, [current, getToken, reloadKey, session]);
 
   useEffect(() => {
     if (videoKey.length === 0) return undefined;
@@ -166,14 +175,11 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
               <Text style={styles.title} numberOfLines={2}>
                 {screenTitle}
               </Text>
-              <Pressable onPress={() => setSettingsOpen(true)} hitSlop={10}>
+              <Pressable onPress={() => setSettingsOpen(true)} hitSlop={10} style={styles.moreButton}>
                 <Text style={styles.more}>•••</Text>
               </Pressable>
             </View>
-            <Text style={styles.count}>
-              {session?.displayName}
-              {movies.length > 0 ? `  ·  ${movies.length} เรื่อง` : ''}
-            </Text>
+            {movies.length > 0 ? <Text style={styles.count}>{movies.length} เรื่อง</Text> : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {featured.length > 0 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
@@ -212,7 +218,14 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
           loading ? (
             <ActivityIndicator color={theme.text} style={styles.spinner} />
           ) : subfolders.length > 0 ? undefined : (
-            <Text style={styles.empty}>ยังไม่มีไฟล์วิดีโอในโฟลเดอร์นี้</Text>
+            <View style={styles.emptyWrap}>
+              <Text style={styles.empty}>{session ? 'ยังไม่มีไฟล์วิดีโอในโฟลเดอร์นี้' : 'คลังยังว่าง'}</Text>
+              {session ? null : (
+                <Pressable style={styles.connectButton} onPress={() => setConnectOpen(true)}>
+                  <Text style={styles.connectButtonText}>เชื่อม OneDrive</Text>
+                </Pressable>
+              )}
+            </View>
           )
         }
         renderItem={({ item: movie }) => {
@@ -237,6 +250,20 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
         <View style={styles.modalBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSettingsOpen(false)} />
           <View style={styles.modal}>
+            <Text style={styles.modalTitle}>ตั้งค่า</Text>
+            <Pressable
+              style={styles.menuRow}
+              onPress={() => {
+                setSettingsOpen(false);
+                setConnectOpen(true);
+              }}
+            >
+              <View style={styles.menuCopy}>
+                <Text style={styles.menuLabel}>เชื่อม OneDrive</Text>
+                <Text style={styles.menuHint}>{session ? session.displayName : 'ยังไม่ได้เชื่อม'}</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
             <Text style={styles.modalTitle}>ปกและรายละเอียด</Text>
             <Text style={styles.modalBody}>แอปดึงปกและเรื่องย่อให้อยู่แล้ว ใส่ API key จาก themoviedb.org เมื่ออยากได้รูปนักแสดงเพิ่ม</Text>
             <TextInput
@@ -257,16 +284,11 @@ export function LibraryScreen({ onOpen }: LibraryProps) {
             >
               <Text style={styles.saveText}>บันทึก</Text>
             </Pressable>
-            <Pressable
-              onPress={() => {
-                setSettingsOpen(false);
-                void signOut();
-              }}
-            >
-              <Text style={styles.signOut}>ออกจากระบบ</Text>
-            </Pressable>
           </View>
         </View>
+      </Modal>
+      <Modal visible={connectOpen} animationType="slide" onRequestClose={() => setConnectOpen(false)}>
+        <ConnectSheet onClose={() => setConnectOpen(false)} />
       </Modal>
     </View>
   );
@@ -278,7 +300,8 @@ const styles = StyleSheet.create({
   back: { color: theme.muted, fontFamily: font.medium, fontSize: 16 },
   titleRow: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' },
   title: { color: theme.text, flex: 1, fontFamily: font.semibold, fontSize: 34, lineHeight: 38 },
-  more: { color: theme.text, fontFamily: font.semibold, fontSize: 20, letterSpacing: 2, paddingTop: 8 },
+  moreButton: { marginRight: 56, marginTop: 6 },
+  more: { color: theme.text, fontFamily: font.semibold, fontSize: 20, letterSpacing: 2 },
   count: { color: theme.muted, fontFamily: font.body, fontSize: 13 },
   error: { color: theme.danger, fontFamily: font.medium, fontSize: 14 },
   featuredRow: { gap: 10, paddingVertical: 6 },
@@ -304,7 +327,22 @@ const styles = StyleSheet.create({
   cardTitle: { color: theme.text, fontFamily: font.medium, fontSize: 12, lineHeight: 15, marginTop: 6 },
   cardYear: { color: theme.faint, fontFamily: font.body, fontSize: 11, height: 16, marginBottom: 12 },
   spinner: { marginTop: 36 },
-  empty: { color: theme.muted, fontFamily: font.body, fontSize: 15, lineHeight: 22, marginTop: 8 },
+  emptyWrap: { gap: 16, marginTop: 8 },
+  empty: { color: theme.muted, fontFamily: font.body, fontSize: 15, lineHeight: 22 },
+  connectButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: theme.text,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  connectButtonText: { color: '#000', fontFamily: font.semibold, fontSize: 15 },
+  menuRow: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingVertical: 4 },
+  menuCopy: { flex: 1, gap: 2 },
+  menuLabel: { color: theme.text, fontFamily: font.semibold, fontSize: 16 },
+  menuHint: { color: theme.muted, fontFamily: font.body, fontSize: 13 },
   modalBackdrop: { backgroundColor: 'rgba(0,0,0,0.62)', flex: 1, justifyContent: 'flex-end' },
   modal: { backgroundColor: '#141416', borderTopLeftRadius: 18, borderTopRightRadius: 18, gap: 12, padding: 22 },
   modalTitle: { color: theme.text, fontFamily: font.semibold, fontSize: 22 },
@@ -320,5 +358,4 @@ const styles = StyleSheet.create({
   },
   save: { alignItems: 'center', backgroundColor: theme.text, borderRadius: 12, height: 50, justifyContent: 'center' },
   saveText: { color: '#000', fontFamily: font.semibold, fontSize: 16 },
-  signOut: { color: theme.danger, fontFamily: font.medium, fontSize: 15, textAlign: 'center' },
 });

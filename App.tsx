@@ -12,7 +12,6 @@ import type { DriveItem } from './src/onedrive/graph';
 import { DetailScreen } from './src/screens/DetailScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
-import { SignInScreen } from './src/screens/SignInScreen';
 
 type DetailRoute = { name: 'detail'; item: DriveItem; match: MediaMatch | null };
 type PlayerRoute = { name: 'player'; title: string; url: string };
@@ -39,7 +38,7 @@ export default function App() {
 }
 
 function Root() {
-  const { ready, session } = useAuth();
+  const { ready } = useAuth();
   const [detail, setDetail] = useState<DetailRoute | null>(null);
   const [player, setPlayer] = useState<PlayerRoute | null>(null);
 
@@ -51,7 +50,6 @@ function Root() {
     );
   }
 
-  if (!session) return <SignInScreen />;
   if (player) return <PlayerScreen title={player.title} url={player.url} onClose={() => setPlayer(null)} />;
   if (detail) {
     return (
