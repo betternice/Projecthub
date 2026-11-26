@@ -48,7 +48,7 @@ class _NiceAppState extends State<NiceApp> {
         animation: _state,
         builder: (context, _) {
           return MaterialApp(
-            title: 'NICE',
+            title: 'Niceflix',
             debugShowCheckedModeBanner: false,
             theme: buildNiceTheme(),
             locale: Locale(_state.lang.code),

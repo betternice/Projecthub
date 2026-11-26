@@ -167,7 +167,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> with SingleTickerProvid
                             children: [
                               _topBar(app),
                               const Spacer(flex: 2),
-                              Text('NICE', style: brandStyle(size: 28, color: themeAccent.withValues(alpha: 0.9))),
+                              Text('Niceflix', style: brandStyle(size: 28, color: themeAccent.withValues(alpha: 0.9))),
                               const SizedBox(height: 10),
                               Text(app.tr('whoIsWatching'), style: displayStyle(size: 42)),
                               const SizedBox(height: 8),
@@ -210,37 +210,48 @@ class _ProfilesScreenState extends State<ProfilesScreen> with SingleTickerProvid
           autofocus: true,
           onPressed: () => Navigator.of(context).pop(false),
         ),
-        const Spacer(),
-        for (final option in AppLang.values) ...[
-          TvButton(
-            label: option == AppLang.th ? 'TH' : 'EN',
-            filled: app.lang == option,
-            onPressed: () => app.setLang(option),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            reverse: true,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                for (final option in AppLang.values) ...[
+                  TvButton(
+                    label: option == AppLang.th ? 'TH' : 'EN',
+                    filled: app.lang == option,
+                    compact: true,
+                    onPressed: () => app.setLang(option),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                TvButton(
+                  label: app.tr('manageAccounts'),
+                  filled: false,
+                  icon: Icons.cloud_outlined,
+                  onPressed: _openAccounts,
+                ),
+                if (app.hasOneDrive) ...[
+                  const SizedBox(width: 8),
+                  TvButton(
+                    label: app.syncingProfiles ? app.tr('syncing') : app.tr('syncOneDrive'),
+                    filled: false,
+                    icon: Icons.cloud_sync_outlined,
+                    onPressed: app.syncingProfiles ? () {} : _syncNow,
+                  ),
+                ],
+                const SizedBox(width: 8),
+                TvButton(
+                  label: _editing ? app.tr('doneEditing') : app.tr('manageProfiles'),
+                  filled: _editing,
+                  icon: _editing ? Icons.check_rounded : Icons.tune_rounded,
+                  onPressed: () => setState(() => _editing = !_editing),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-        ],
-        TvButton(
-          label: app.tr('manageAccounts'),
-          filled: false,
-          icon: Icons.manage_accounts_outlined,
-          onPressed: _openAccounts,
-        ),
-        if (app.hasOneDrive) ...[
-          const SizedBox(width: 8),
-          TvButton(
-            label: app.syncingProfiles ? app.tr('syncing') : app.tr('syncOneDrive'),
-            filled: false,
-            icon: Icons.cloud_sync_outlined,
-            iconOnly: true,
-            onPressed: app.syncingProfiles ? () {} : _syncNow,
-          ),
-        ],
-        const SizedBox(width: 8),
-        TvButton(
-          label: _editing ? app.tr('doneEditing') : app.tr('manageProfiles'),
-          filled: _editing,
-          icon: _editing ? Icons.check_rounded : Icons.tune_rounded,
-          onPressed: () => setState(() => _editing = !_editing),
         ),
       ],
     );

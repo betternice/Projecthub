@@ -1,6 +1,6 @@
 {
-    "name": "movie_collection",
-    "short_name": "movie_collection",
+    "name": "Niceflix",
+    "short_name": "Niceflix",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

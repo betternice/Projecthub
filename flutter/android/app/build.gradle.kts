@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.projecthub.movie_collection"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

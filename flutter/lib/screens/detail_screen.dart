@@ -232,7 +232,7 @@ class _DetailScreenState extends State<DetailScreen> {
                               onPressed: () => Navigator.of(context).pop(),
                             ),
                             const Spacer(),
-                            Text('NICE', style: brandStyle(size: 28, color: themeAccent)),
+                            Text('Niceflix', style: brandStyle(size: 28, color: themeAccent)),
                             const SizedBox(height: 10),
                             Text(title, style: displayStyle(size: 52)),
                             const SizedBox(height: 14),

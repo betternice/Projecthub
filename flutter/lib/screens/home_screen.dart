@@ -589,7 +589,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('NICE', style: brandStyle(size: 64, color: themeAccent)),
+                  Text('Niceflix', style: brandStyle(size: 64, color: themeAccent)),
                   const Spacer(),
                   Text(app.tr('welcomeTitle'), style: displayStyle(size: 52)),
                   const SizedBox(height: 18),
@@ -904,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(56, 18, 56, 8),
       child: Row(
         children: [
-          Text('NICE', style: brandStyle(size: 40, color: themeAccent)),
+          Text('Niceflix', style: brandStyle(size: 40, color: themeAccent)),
           const SizedBox(width: 28),
           Expanded(
             child: Text(
@@ -914,42 +914,43 @@ class _HomeScreenState extends State<HomeScreen> {
               style: bodyStyle(size: 16, color: themeMuted),
             ),
           ),
-              SizedBox(
+          SizedBox(
             width: 220,
-            height: 44,
+            height: 50,
             child: TextField(
               controller: _search,
               focusNode: _searchFocus,
-              style: bodyStyle(size: 14),
+              style: bodyStyle(size: 15),
               cursorColor: themeAccent,
               textInputAction: TextInputAction.search,
+              textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
                 isDense: true,
                 hintText: app.tr('searchHint'),
-                hintStyle: bodyStyle(size: 14, color: themeFaint),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20, color: themeMuted),
-                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                hintStyle: bodyStyle(size: 15, color: themeFaint),
+                prefixIcon: const Icon(Icons.search_rounded, size: 22, color: themeMuted),
+                prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 50),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
                         tooltip: app.tr('clearSearch'),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 50),
                         onPressed: () {
                           _search.clear();
                           _searchFocus.requestFocus();
                         },
-                        icon: const Icon(Icons.close_rounded, size: 18, color: themeMuted),
+                        icon: const Icon(Icons.close_rounded, size: 20, color: themeMuted),
                       ),
                 filled: true,
                 fillColor: themePanel,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: themeFocus, width: 2),
                 ),
               ),

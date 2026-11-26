@@ -19,7 +19,7 @@ import '../onedrive/graph.dart';
 class AppState extends ChangeNotifier {
   AppState();
 
-  final _secure = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+  final _secure = const FlutterSecureStorage(aOptions: AndroidOptions());
   SharedPreferences? _prefs;
 
   bool ready = false;
@@ -322,7 +322,9 @@ class AppState extends ChangeNotifier {
       lastSyncError = null;
       notifyListeners();
       final token = await getToken();
-      final raw = await downloadDriveText(token, kNiceSyncPath);
+      var raw = await downloadDriveText(token, kNiceSyncPath);
+      // รองรับไฟล์ซิงก์ชื่อเก่า /NICE/
+      raw ??= await downloadDriveText(token, kNiceSyncPathLegacy);
       if (raw == null || raw.isEmpty) {
         await pushProfileSync();
         return;

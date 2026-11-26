@@ -80,7 +80,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _player = Player(
       configuration: const PlayerConfiguration(
         bufferSize: 32 * 1024 * 1024,
-        title: 'NICE',
+        title: 'Niceflix',
       ),
     );
     _video = VideoController(_player);

@@ -126,6 +126,8 @@ class TvButton extends StatelessWidget {
     this.filled = true,
     this.icon,
     this.iconOnly = false,
+    /// Compact chip (TH/EN) — same height as full buttons.
+    this.compact = false,
     this.focusNode,
   });
 
@@ -135,11 +137,51 @@ class TvButton extends StatelessWidget {
   final bool filled;
   final IconData? icon;
   final bool iconOnly;
+  final bool compact;
   final FocusNode? focusNode;
+
+  /// Shared bar control height (กลับ / ภาษา / คลัง / จัดการ).
+  static const barHeight = 50.0;
 
   @override
   Widget build(BuildContext context) {
     assert(!iconOnly || icon != null, 'iconOnly requires an icon');
+    final Widget inner;
+    if (iconOnly) {
+      inner = SizedBox(
+        width: barHeight,
+        height: barHeight,
+        child: Center(child: Icon(icon, size: 22, color: themeText)),
+      );
+    } else if (compact) {
+      inner = SizedBox(
+        height: barHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Center(
+            child: Text(label, style: bodyStyle(size: 15, weight: FontWeight.w700)),
+          ),
+        ),
+      );
+    } else {
+      inner = SizedBox(
+        height: barHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 22, color: themeText),
+                const SizedBox(width: 10),
+              ],
+              Text(label, style: bodyStyle(size: 18, weight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      );
+    }
+
     return TvFocus(
       autofocus: autofocus,
       focusNode: focusNode,
@@ -148,23 +190,7 @@ class TvButton extends StatelessWidget {
       borderRadius: 8,
       child: ColoredBox(
         color: filled ? themeAccent : const Color(0x33FFFFFF),
-        child: Padding(
-          padding: iconOnly
-              ? const EdgeInsets.all(14)
-              : const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-          child: iconOnly
-              ? Icon(icon, size: 22, color: themeText)
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (icon != null) ...[
-                      Icon(icon, size: 22, color: themeText),
-                      const SizedBox(width: 10),
-                    ],
-                    Text(label, style: bodyStyle(size: 18, weight: FontWeight.w600)),
-                  ],
-                ),
-        ),
+        child: inner,
       ),
     );
   }

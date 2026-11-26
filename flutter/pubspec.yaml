@@ -1,5 +1,5 @@
 name: nice
-description: NICE — Android TV movie app from OneDrive MKV files
+description: Niceflix — Android TV movie app from OneDrive MKV files
 publish_to: "none"
 version: 1.0.0+1
 
@@ -8,13 +8,13 @@ environment:
 
 dependencies:
   cached_network_image: ^4.0.7
-  file_picker: ^11.0.3
+  file_picker: ^13.4.1
   flutter:
     sdk: flutter
   flutter_cache_manager: ^3.5.0
   flutter_localizations:
     sdk: flutter
-  flutter_secure_storage: ^9.2.4
+  flutter_secure_storage: ^11.2.0
   google_fonts: ^6.2.1
   http: ^1.2.2
   media_kit: ^1.2.6

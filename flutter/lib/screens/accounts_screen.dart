@@ -59,43 +59,10 @@ class _AccountsScreenState extends State<AccountsScreen> {
   }
 
   Future<void> _renameAccount(Session account) async {
-    final controller = TextEditingController(text: account.label);
     final next = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: themePanel,
-        title: Text(AppScope.of(context).tr('renameLibrary'), style: displayStyle(size: 24)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: bodyStyle(size: 18),
-          cursorColor: themeAccent,
-          decoration: InputDecoration(
-            labelText: AppScope.of(context).tr('name'),
-            labelStyle: bodyStyle(size: 14, color: themeMuted),
-            filled: true,
-            fillColor: themeRaised,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: themeFocus, width: 2),
-            ),
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(AppScope.of(context).tr('cancel'), style: bodyStyle(size: 16, color: themeMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(AppScope.of(context).tr('save'), style: bodyStyle(size: 16, color: themeAccentSoft)),
-          ),
-        ],
-      ),
+      builder: (context) => _RenameLibraryDialog(initial: account.label),
     );
-    controller.dispose();
     if (next == null || !mounted) return;
     await AppScope.of(context).renameAccount(account.id, next);
     setState(() {});
@@ -602,6 +569,70 @@ class _OneDriveFoldersScreenState extends State<OneDriveFoldersScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RenameLibraryDialog extends StatefulWidget {
+  const _RenameLibraryDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameLibraryDialog> createState() => _RenameLibraryDialogState();
+}
+
+class _RenameLibraryDialogState extends State<_RenameLibraryDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    return AlertDialog(
+      backgroundColor: themePanel,
+      title: Text(app.tr('renameLibrary'), style: displayStyle(size: 24)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: bodyStyle(size: 18),
+        cursorColor: themeAccent,
+        decoration: InputDecoration(
+          labelText: app.tr('name'),
+          labelStyle: bodyStyle(size: 14, color: themeMuted),
+          filled: true,
+          fillColor: themeRaised,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: themeFocus, width: 2),
+          ),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(app.tr('cancel'), style: bodyStyle(size: 16, color: themeMuted)),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text(app.tr('save'), style: bodyStyle(size: 16, color: themeAccentSoft)),
+        ),
+      ],
     );
   }
 }

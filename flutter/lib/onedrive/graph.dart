@@ -60,7 +60,8 @@ Future<String> fetchProfileName(String token) async {
   return profile.displayName;
 }
 
-const kNiceSyncPath = '/NICE/profile-sync.json';
+const kNiceSyncPath = '/Niceflix/profile-sync.json';
+const kNiceSyncPathLegacy = '/NICE/profile-sync.json';
 
 Future<String?> downloadDriveText(String token, String path) async {
   final encoded = Uri.encodeComponent(path.startsWith('/') ? path.substring(1) : path);
@@ -80,7 +81,7 @@ Future<String?> downloadDriveText(String token, String path) async {
 
 Future<void> uploadDriveText(String token, String path, String content) async {
   final clean = path.startsWith('/') ? path.substring(1) : path;
-  // สร้างโฟลเดอร์ NICE ถ้ายังไม่มี
+  // สร้างโฟลเดอร์ Niceflix ถ้ายังไม่มี
   final folderName = clean.contains('/') ? clean.split('/').first : null;
   if (folderName != null && folderName.isNotEmpty) {
     await http.post(
