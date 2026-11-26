@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'screens/home_screen.dart';
 import 'state/app_state.dart';
@@ -7,6 +9,7 @@ import 'theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.landscapeLeft,
@@ -41,11 +44,23 @@ class _NiceAppState extends State<NiceApp> {
   Widget build(BuildContext context) {
     return AppScope(
       state: _state,
-      child: MaterialApp(
-        title: 'NICE',
-        debugShowCheckedModeBanner: false,
-        theme: buildNiceTheme(),
-        home: const HomeScreen(),
+      child: AnimatedBuilder(
+        animation: _state,
+        builder: (context, _) {
+          return MaterialApp(
+            title: 'NICE',
+            debugShowCheckedModeBanner: false,
+            theme: buildNiceTheme(),
+            locale: Locale(_state.lang.code),
+            supportedLocales: const [Locale('th'), Locale('en')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: const HomeScreen(),
+          );
+        },
       ),
     );
   }

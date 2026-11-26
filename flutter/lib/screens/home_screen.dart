@@ -1,20 +1,26 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../format.dart';
+import '../library/overview.dart';
+import '../local/library.dart';
 import '../metadata/tmdb.dart';
 import '../models.dart';
 import '../onedrive/graph.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../widgets/content_gallery.dart';
 import '../widgets/content_rail.dart';
 import '../widgets/poster_card.dart';
+import '../widgets/remote_art.dart';
 import '../widgets/tv_focus.dart';
-import 'connect_screen.dart';
 import 'detail_screen.dart';
+import 'profiles_screen.dart';
 
 class LibraryMovie {
   const LibraryMovie({
@@ -22,16 +28,29 @@ class LibraryMovie {
     required this.title,
     this.year,
     this.match,
+    this.accountId,
+    this.accountLabel,
+    this.libraryRef,
   });
 
   final DriveItem item;
   final String title;
   final String? year;
   final MediaMatch? match;
+  final String? accountId;
+  final String? accountLabel;
+  final LibraryRef? libraryRef;
 
-  String? get art => match?.backdropUrl ?? match?.posterUrl ?? item.thumbLarge ?? item.thumbMedium;
-  String? get poster => match?.posterUrl ?? item.thumbLarge ?? item.thumbMedium;
-  String? get overview => match?.overview;
+  String? get art =>
+      match?.backdropUrl ??
+      libraryRef?.backdropUrl ??
+      match?.posterUrl ??
+      libraryRef?.posterUrl ??
+      item.thumbLarge ??
+      item.thumbMedium;
+  String? get poster => match?.posterUrl ?? libraryRef?.posterUrl ?? item.thumbLarge ?? item.thumbMedium;
+  String? get overview => match?.overview ?? libraryRef?.overview;
+  List<String> get genres => match?.genres ?? const [];
 }
 
 class HomeScreen extends StatefulWidget {
@@ -49,44 +68,143 @@ class _HomeScreenState extends State<HomeScreen> {
   var _loading = true;
   String? _error;
   var _lookupToken = 0;
+  var _loadGen = 0;
   final _scroll = ScrollController();
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  String? _boundAccount;
 
   FolderCrumb? get _current => _folders == null || _folders!.isEmpty ? null : _folders!.last;
+
+  String get _query => _search.text.trim().toLowerCase();
+
+  bool _matchesQuery(LibraryMovie movie) {
+    final q = _query;
+    if (q.isEmpty) return true;
+    final haystack = [
+      movie.title,
+      movie.item.name,
+      movie.year,
+      movie.accountLabel,
+      ...movie.genres,
+      movie.overview,
+    ].whereType<String>().join(' ').toLowerCase();
+    return haystack.contains(q);
+  }
+
+  bool _matchesRefQuery(LibraryRef ref) {
+    final q = _query;
+    if (q.isEmpty) return true;
+    final haystack = [
+      ref.title,
+      ref.name,
+      ref.year,
+      ref.accountLabel,
+      ref.overview,
+    ].whereType<String>().join(' ').toLowerCase();
+    return haystack.contains(q);
+  }
 
   @override
   void initState() {
     super.initState();
-    _restoreFolders();
+    _search.addListener(() {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncSourceAndLoad(force: true);
+    });
   }
 
   @override
   void dispose() {
     _scroll.dispose();
+    _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _restoreFolders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('folders');
-    List<FolderCrumb> next = const [FolderCrumb(id: 'root', name: 'OneDrive')];
-    if (raw != null) {
-      try {
-        final parsed = (jsonDecode(raw) as List<dynamic>)
-            .whereType<Map<String, dynamic>>()
-            .map(FolderCrumb.fromJson)
-            .toList();
-        if (parsed.isNotEmpty) next = parsed;
-      } catch (_) {}
+  List<FolderCrumb> _rootCrumbs(AppState app) {
+    if (app.source == MediaSource.overview) {
+      return const [FolderCrumb(id: 'overview', name: 'ทั้งหมด')];
+    }
+    if (app.source == MediaSource.oneDrive) {
+      return [FolderCrumb(id: 'root', name: app.oneDriveLabel)];
+    }
+    final path = app.localRootPath ?? '';
+    final sep = kIsWeb ? '/' : Platform.pathSeparator;
+    final name = path.isEmpty ? 'เครื่องนี้' : path.split(sep).where((s) => s.isNotEmpty).last;
+    return [FolderCrumb(id: path.isEmpty ? 'local-root' : path, name: name.isEmpty ? 'เครื่องนี้' : name)];
+  }
+
+  String _folderKey(AppState app) {
+    if (app.source == MediaSource.overview) return 'folders_overview';
+    if (app.source == MediaSource.oneDrive) {
+      final id = app.session?.id ?? 'default';
+      return 'folders_onedrive_${Uri.encodeComponent(id)}';
+    }
+    return 'folders_local';
+  }
+
+  Future<void> _syncSourceAndLoad({bool force = false, bool resetPath = false}) async {
+    final app = AppScope.of(context);
+    if (!app.ready) return;
+    final bound = '${app.source.name}:${app.session?.id ?? ''}';
+    if (!force && !resetPath && _boundAccount == bound && _folders != null) {
+      await _load();
+      return;
+    }
+    if (app.source == MediaSource.overview) {
+      if (!mounted) return;
+      setState(() {
+        _folders = _rootCrumbs(app);
+        _boundAccount = bound;
+      });
+      await _load();
+      return;
+    }
+    List<FolderCrumb> next = _rootCrumbs(app);
+    // สลับคลัง — เริ่มที่ root เสมอ กันปน path/ไฟล์คลังอื่น
+    if (!resetPath) {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _folderKey(app);
+      final raw = prefs.getString(key);
+      if (raw != null) {
+        try {
+          final parsed = (jsonDecode(raw) as List<dynamic>)
+              .whereType<Map<String, dynamic>>()
+              .map(FolderCrumb.fromJson)
+              .toList();
+          if (parsed.isNotEmpty) {
+            if (app.source == MediaSource.local &&
+                app.localRootPath != null &&
+                parsed.first.id != app.localRootPath) {
+              next = _rootCrumbs(app);
+            } else if (app.source == MediaSource.oneDrive && parsed.first.name != app.oneDriveLabel) {
+              next = [FolderCrumb(id: 'root', name: app.oneDriveLabel), ...parsed.skip(1)];
+            } else {
+              next = parsed;
+            }
+          }
+        } catch (_) {}
+      }
     }
     if (!mounted) return;
-    setState(() => _folders = next);
+    setState(() {
+      _folders = next;
+      _boundAccount = bound;
+      _movies = [];
+      _foldersOnly = [];
+      _hero = null;
+    });
     await _load();
   }
 
   Future<void> _remember(List<FolderCrumb> next) async {
+    final app = AppScope.of(context);
     setState(() => _folders = next);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('folders', jsonEncode(next.map((folder) => folder.toJson()).toList()));
+    await prefs.setString(_folderKey(app), jsonEncode(next.map((folder) => folder.toJson()).toList()));
     await _load();
   }
 
@@ -94,11 +212,28 @@ class _HomeScreenState extends State<HomeScreen> {
     final current = _current;
     final app = AppScope.of(context);
     if (current == null) return;
+    final gen = ++_loadGen;
+    final boundSource = app.source;
+    final boundAccountId = app.session?.id;
 
-    if (app.session == null) {
+    bool stale() => !mounted || gen != _loadGen || AppScope.of(context).source != boundSource ||
+        (boundSource == MediaSource.oneDrive && AppScope.of(context).session?.id != boundAccountId);
+
+    if (app.source == MediaSource.local && (app.localRootPath == null || app.localRootPath!.isEmpty)) {
       setState(() {
         _loading = false;
         _error = null;
+        _movies = [];
+        _foldersOnly = [];
+        _hero = null;
+      });
+      return;
+    }
+
+    if (app.source == MediaSource.oneDrive && app.session == null) {
+      setState(() {
+        _loading = false;
+        _error = 'ยังไม่ได้เชื่อม OneDrive';
         _movies = [];
         _foldersOnly = [];
         _hero = null;
@@ -115,20 +250,85 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final token = await app.getToken();
-      final items = await listChildren(token, current.id);
-      if (!mounted) return;
+      if (app.source == MediaSource.overview) {
+        final refs = await collectOverviewLibrary(app);
+        if (stale()) return;
+        final movies = refs
+            .map(
+              (ref) => LibraryMovie(
+                item: ref.toDriveItem(),
+                title: ref.title,
+                year: ref.year,
+                accountId: ref.accountId,
+                accountLabel: ref.accountLabel,
+                libraryRef: ref,
+              ),
+            )
+            .toList();
+        setState(() {
+          _foldersOnly = [];
+          _movies = movies;
+          _hero = movies.isNotEmpty
+              ? movies.first
+              : (app.continueWatching.isNotEmpty
+                  ? LibraryMovie(
+                      item: app.continueWatching.first.ref.toDriveItem(),
+                      title: app.continueWatching.first.ref.title,
+                      year: app.continueWatching.first.ref.year,
+                      accountId: app.continueWatching.first.ref.accountId,
+                      accountLabel: app.continueWatching.first.ref.accountLabel,
+                      libraryRef: app.continueWatching.first.ref,
+                    )
+                  : null);
+          _loading = false;
+        });
+        _enrich(movies);
+        return;
+      }
 
-      final folders = items.where((item) => item.isFolder).toList()
+      final List<DriveItem> items;
+      if (app.source == MediaSource.local) {
+        final path = current.id == 'local-root' ? (app.localRootPath ?? '') : current.id;
+        items = await listLocalChildren(path);
+      } else {
+        // ล็อกโทเคนตามคลังที่กำลังเปิด — กันปนไฟล์คลังอื่น
+        final token = await app.getToken(accountId: boundAccountId);
+        if (stale()) return;
+        items = await listChildren(token, current.id);
+      }
+      if (stale()) return;
+
+      var folders = items.where((item) => item.isFolder).toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      final videos = items.where(isVideoFile).toList()
+      var videos = items.where(isVideoFile).toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+      final account = boundSource == MediaSource.oneDrive
+          ? app.accountById(boundAccountId)
+          : null;
+      // ที่ root ของ OneDrive — โชว์เฉพาะโฟลเดอร์ที่ติ๊กไว้ (ถ้าระบุแล้ว)
+      // และไม่โชว์ไฟล์วิดีโอบน root นอกโฟลเดอร์ที่เลือก
+      if (account != null &&
+          account.hasLibraryFilter &&
+          (current.id == 'root' || current.id.isEmpty)) {
+        final allowed = account.libraryFolderIds;
+        folders = folders.where((f) => allowed.contains(f.id)).toList();
+        videos = const [];
+      }
       final movies = videos.map((item) {
         final parsed = presentTitle(item.name);
-        return LibraryMovie(item: item, title: parsed.title, year: parsed.year);
+        final ref = refFromItem(item, accountId: account?.id, accountLabel: account?.title ?? 'เครื่องนี้');
+        return LibraryMovie(
+          item: item,
+          title: parsed.title,
+          year: parsed.year,
+          accountId: account?.id,
+          accountLabel: account?.title ?? 'เครื่องนี้',
+          libraryRef: ref,
+        );
       }).toList();
 
+      if (stale()) return;
       setState(() {
         _foldersOnly = folders;
         _movies = movies;
@@ -138,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       _enrich(movies);
     } catch (error) {
-      if (!mounted) return;
+      if (stale()) return;
       setState(() {
         _loading = false;
         _error = error.toString().replaceFirst('Exception: ', '');
@@ -148,55 +348,184 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _enrich(List<LibraryMovie> movies) async {
     final token = ++_lookupToken;
+    final loadAtStart = _loadGen;
     final app = AppScope.of(context);
     final next = <LibraryMovie>[];
     for (final movie in movies) {
-      if (!mounted || token != _lookupToken) return;
-      final match = await lookupMedia(movie.item.name, app.tmdbKey);
+      if (!mounted || token != _lookupToken || loadAtStart != _loadGen) return;
+      final match = await lookupMedia(
+        movie.item.name,
+        app.tmdbKey,
+        libraryKey: movie.libraryRef?.key,
+      );
       next.add(LibraryMovie(
         item: movie.item,
         title: match?.title ?? movie.title,
         year: match?.year ?? movie.year,
         match: match,
+        accountId: movie.accountId,
+        accountLabel: movie.accountLabel,
+        libraryRef: movie.libraryRef?.copyWith(
+          title: match?.title ?? movie.libraryRef?.title,
+          posterUrl: match?.posterUrl ?? movie.libraryRef?.posterUrl,
+          backdropUrl: match?.backdropUrl ?? movie.libraryRef?.backdropUrl,
+          year: match?.year ?? movie.libraryRef?.year,
+          overview: match?.overview ?? movie.libraryRef?.overview,
+        ),
       ));
     }
-    if (!mounted || token != _lookupToken) return;
+    if (!mounted || token != _lookupToken || loadAtStart != _loadGen) return;
     setState(() {
       _movies = next;
       if (next.isNotEmpty) _hero = next.first;
     });
   }
 
-  Future<void> _openConnect() async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const ConnectScreen()),
+  Future<void> _openProfiles() async {
+    final beforeId = AppScope.of(context).session?.id;
+    final beforeSource = AppScope.of(context).source;
+    final openedLibrary = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ProfilesScreen()),
     );
-    if (ok == true && mounted) await _load();
+    if (!mounted) return;
+    setState(() {});
+    final app = AppScope.of(context);
+    final switched = app.session?.id != beforeId || app.source != beforeSource;
+    // เปิดคลังจากหน้าคลัง — โหลดคลัง OneDrive ที่ root
+    await _syncSourceAndLoad(
+      force: true,
+      resetPath: openedLibrary == true || switched,
+    );
+  }
+
+  Future<void> _pickLocalFolder() async {
+    final path = await pickLocalLibraryFolder();
+    if (path == null || !mounted) return;
+    await AppScope.of(context).setLocalRoot(path);
+    await _syncSourceAndLoad(force: true);
+  }
+
+  Future<void> _useOverview() async {
+    await AppScope.of(context).openOverview();
+    await _syncSourceAndLoad(force: true);
+  }
+
+  Future<void> _useLocal() async {
+    final app = AppScope.of(context);
+    if (app.localRootPath == null) {
+      await _pickLocalFolder();
+      return;
+    }
+    await app.setSource(MediaSource.local);
+    await _syncSourceAndLoad(force: true);
+  }
+
+  Future<void> _useOneDriveAccount(Session account) async {
+    final app = AppScope.of(context);
+    await app.selectAccount(account.id);
+    await _syncSourceAndLoad(force: true, resetPath: true);
   }
 
   Future<void> _openMovie(LibraryMovie movie) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => DetailScreen(item: movie.item, match: movie.match),
+        builder: (_) => DetailScreen(
+          item: movie.item,
+          match: movie.match,
+          accountId: movie.accountId,
+          accountLabel: movie.accountLabel,
+          libraryRef: movie.libraryRef,
+        ),
       ),
     );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openRef(LibraryRef ref) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DetailScreen(
+          item: ref.toDriveItem(),
+          accountId: ref.accountId,
+          accountLabel: ref.accountLabel,
+          libraryRef: ref,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openFolder(DriveItem folder) async {
     final current = _folders ?? const [];
-    await _remember([...current, FolderCrumb(id: folder.id, name: folder.name)]);
+    final id = folder.localPath ?? folder.id;
+    await _remember([...current, FolderCrumb(id: id, name: folder.name)]);
   }
 
   Future<void> _goUp() async {
+    final app = AppScope.of(context);
+    if (app.source == MediaSource.overview) return;
     final current = _folders;
     if (current == null || current.length <= 1) return;
     await _remember(current.sublist(0, current.length - 1));
   }
 
-  List<LibraryMovie> get _mkvMovies =>
-      _movies.where((m) => m.item.name.toLowerCase().endsWith('.mkv')).toList();
+  List<LibraryMovie> get _visibleMovies => _movies.where(_matchesQuery).toList();
 
-  List<LibraryMovie> get _recentMovies => _movies.take(24).toList();
+  List<DriveItem> get _visibleFolders {
+    final q = _query;
+    if (q.isEmpty) return _foldersOnly;
+    return _foldersOnly.where((f) => f.name.toLowerCase().contains(q)).toList();
+  }
+
+  List<WatchProgress> _visibleContinue(AppState app) =>
+      app.continueWatching.where((w) => _matchesRefQuery(w.ref)).toList();
+
+  List<LibraryRef> _visibleFavorites(AppState app) =>
+      app.favorites.where(_matchesRefQuery).toList();
+
+  static const _genrePriority = [
+    'แอ็กชัน',
+    'ผจญภัย',
+    'แอนิเมชัน',
+    'ตลก',
+    'อาชญากรรม',
+    'สารคดี',
+    'ดราม่า',
+    'ครอบครัว',
+    'แฟนตาซี',
+    'ประวัติศาสตร์',
+    'สยองขวัญ',
+    'ดนตรี',
+    'ลึกลับ',
+    'โรแมนติก',
+    'ไซไฟ',
+    'ระทึกขวัญ',
+    'สงคราม',
+    'ตะวันตก',
+  ];
+
+  List<MapEntry<String, List<LibraryMovie>>> get _moviesByGenre {
+    final buckets = <String, List<LibraryMovie>>{};
+    for (final movie in _visibleMovies) {
+      final labels = movie.genres.isNotEmpty ? movie.genres : const ['อื่นๆ'];
+      // Put each movie in its primary genre rail only (first genre).
+      final genre = labels.first;
+      buckets.putIfAbsent(genre, () => []).add(movie);
+    }
+    final ordered = <MapEntry<String, List<LibraryMovie>>>[];
+    for (final name in _genrePriority) {
+      final list = buckets.remove(name);
+      if (list != null && list.isNotEmpty) ordered.add(MapEntry(name, list));
+    }
+    final rest = buckets.entries.toList()
+      ..sort((a, b) {
+        if (a.key == 'อื่นๆ') return 1;
+        if (b.key == 'อื่นๆ') return -1;
+        return a.key.compareTo(b.key);
+      });
+    ordered.addAll(rest);
+    return ordered;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,13 +539,22 @@ class _HomeScreenState extends State<HomeScreen> {
             body: Center(child: CircularProgressIndicator(color: themeAccent)),
           );
         }
-        if (app.session == null) return _welcome();
+        final needsSetup = app.source != MediaSource.overview &&
+            app.source == MediaSource.local &&
+            (app.localRootPath == null || app.localRootPath!.isEmpty) &&
+            !_loading &&
+            _movies.isEmpty &&
+            _foldersOnly.isEmpty &&
+            app.accounts.isEmpty &&
+            app.continueWatching.isEmpty &&
+            app.favorites.isEmpty;
+        if (needsSetup && _error == null) return _welcome(app);
         return _library(app);
       },
     );
   }
 
-  Widget _welcome() {
+  Widget _welcome(AppState app) {
     return Scaffold(
       backgroundColor: themeBg,
       body: Stack(
@@ -253,21 +591,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text('NICE', style: brandStyle(size: 64, color: themeAccent)),
                   const Spacer(),
-                  Text('หนังจาก OneDrive\nบน Android TV', style: displayStyle(size: 56)),
+                  Text(app.tr('welcomeTitle'), style: displayStyle(size: 52)),
                   const SizedBox(height: 18),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
+                    constraints: const BoxConstraints(maxWidth: 680),
                     child: Text(
-                      'เชื่อมคลังไฟล์ .mkv / .mp4 จากคลาวด์ แล้วเลือกดูด้วยรีโมทแบบ Netflix',
+                      app.tr('welcomeBody'),
                       style: bodyStyle(size: 22, color: themeMuted),
                     ),
                   ),
                   const SizedBox(height: 36),
-                  TvButton(
-                    label: 'เชื่อม OneDrive',
-                    autofocus: true,
-                    icon: Icons.cloud_outlined,
-                    onPressed: _openConnect,
+                  Row(
+                    children: [
+                      TvButton(
+                        label: app.tr('pickLocalFolder'),
+                        autofocus: true,
+                        icon: Icons.folder_open_rounded,
+                        onPressed: _pickLocalFolder,
+                      ),
+                      const SizedBox(width: 16),
+                      TvButton(
+                        label: app.tr('profiles'),
+                        filled: false,
+                        icon: Icons.person_outline_rounded,
+                        onPressed: _openProfiles,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -279,7 +628,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _library(AppState app) {
-    final hero = _hero;
+    // Featured เฉพาะหน้าแรก (Overview) — ในคลัง/โฟลเดอร์ไม่โชว์
+    final hero = app.source == MediaSource.overview && _hero != null && _matchesQuery(_hero!)
+        ? _hero
+        : null;
+    final continueItems = _visibleContinue(app);
+    final favoriteItems = _visibleFavorites(app);
     return Scaffold(
       backgroundColor: themeBg,
       body: Shortcuts(
@@ -295,44 +649,16 @@ class _HomeScreenState extends State<HomeScreen> {
               return null;
             }),
           },
-          child: Stack(
-            children: [
-              if (hero?.art != null)
-                Positioned.fill(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 450),
-                    child: Image.network(
-                      hero!.art!,
-                      key: ValueKey(hero.art),
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                      errorBuilder: (_, __, ___) => const ColoredBox(color: themeBg),
-                    ),
-                  ),
-                ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        const Color(0x66000000),
-                        themeBg.withValues(alpha: 0.55),
-                        themeBg,
-                      ],
-                      stops: const [0, 0.38, 0.72],
-                    ),
-                  ),
-                ),
-              ),
-              SafeArea(
-                child: CustomScrollView(
-                  controller: _scroll,
-                  slivers: [
-                    SliverToBoxAdapter(child: _topBar(app)),
-                    SliverToBoxAdapter(child: _heroBlock(hero)),
-                    if (_loading)
+          child: ColoredBox(
+            color: themeBg,
+            child: SafeArea(
+              child: CustomScrollView(
+                controller: _scroll,
+                slivers: [
+                  SliverToBoxAdapter(child: _topBar(app)),
+                  SliverToBoxAdapter(child: _sourceBar(app)),
+                  SliverToBoxAdapter(child: _heroBlock(hero)),
+                  if (_loading)
                       const SliverFillRemaining(
                         hasScrollBody: false,
                         child: Center(child: CircularProgressIndicator(color: themeAccent)),
@@ -343,80 +669,230 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _errorState(_error!),
                       )
                     else ...[
-                      if (_recentMovies.isNotEmpty)
+                      if (app.source == MediaSource.overview && continueItems.isNotEmpty) ...[
                         const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                      if (_recentMovies.isNotEmpty)
                         SliverToBoxAdapter(
                           child: ContentRail(
-                            title: 'ทั้งหมดในโฟลเดอร์นี้',
+                            title: app.tr('continueWatching'),
                             children: [
-                              for (var i = 0; i < _recentMovies.length; i++)
+                              for (var i = 0; i < continueItems.length; i++)
                                 PosterCard(
-                                  title: _recentMovies[i].title,
-                                  seed: _recentMovies[i].item.id,
-                                  imageUrl: _recentMovies[i].poster,
-                                  subtitle: _recentMovies[i].year,
+                                  title: continueItems[i].ref.title,
+                                  seed: continueItems[i].ref.key,
+                                  imageUrl: continueItems[i].ref.posterUrl,
+                                  subtitle: formatWatchProgress(
+                                    continueItems[i].positionMs,
+                                    continueItems[i].durationMs,
+                                  ),
                                   autofocus: i == 0 && hero == null,
-                                  onPressed: () => _openMovie(_recentMovies[i]),
+                                  onPressed: () => _openRef(continueItems[i].ref),
                                 ),
                             ],
                           ),
                         ),
-                      if (_mkvMovies.isNotEmpty) ...[
+                      ],
+                      if (app.source == MediaSource.overview && favoriteItems.isNotEmpty) ...[
                         const SliverToBoxAdapter(child: SizedBox(height: 12)),
                         SliverToBoxAdapter(
                           child: ContentRail(
-                            title: 'ไฟล์ MKV',
+                            title: app.tr('favourite'),
                             children: [
-                              for (final movie in _mkvMovies)
+                              for (final fav in favoriteItems)
                                 PosterCard(
+                                  title: fav.title,
+                                  seed: fav.key,
+                                  imageUrl: fav.posterUrl,
+                                  subtitle: fav.accountLabel ?? fav.year,
+                                  onPressed: () => _openRef(fav),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (app.source == MediaSource.overview) ...[
+                        for (final entry in _moviesByGenre) ...[
+                          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                          SliverToBoxAdapter(
+                            child: ContentRail(
+                              title: entry.key,
+                              children: [
+                                for (var i = 0; i < entry.value.length; i++)
+                                  PosterCard(
+                                    title: entry.value[i].title,
+                                    seed: entry.value[i].item.id,
+                                    imageUrl: entry.value[i].poster,
+                                    subtitle: entry.value[i].accountLabel ?? entry.value[i].year,
+                                    autofocus: i == 0 &&
+                                        hero == null &&
+                                        entry.key == _moviesByGenre.first.key &&
+                                        continueItems.isEmpty &&
+                                        favoriteItems.isEmpty,
+                                    onPressed: () => _openMovie(entry.value[i]),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        // คลัง / ในโฟลเดอร์ — แกลเลอรีตาราง ไม่ใช้สไลด์ข้าง
+                        if (_visibleFolders.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: ContentGallery(
+                              title: app.tr('folders'),
+                              itemCount: _visibleFolders.length,
+                              maxCrossAxisExtent: 220,
+                              childAspectRatio: 1.15,
+                              itemBuilder: (context, i) {
+                                final folder = _visibleFolders[i];
+                                return PosterCard(
+                                  title: folder.name,
+                                  seed: folder.id,
+                                  expand: true,
+                                  imageAspectRatio: 16 / 9,
+                                  subtitle: app.tr('openFolder'),
+                                  autofocus: i == 0 && hero == null && _visibleMovies.isEmpty,
+                                  onPressed: () => _openFolder(folder),
+                                );
+                              },
+                            ),
+                          ),
+                        if (_visibleMovies.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: ContentGallery(
+                              title: app.tr('allInFolder'),
+                              itemCount: _visibleMovies.length,
+                              itemBuilder: (context, i) {
+                                final movie = _visibleMovies[i];
+                                return PosterCard(
                                   title: movie.title,
                                   seed: movie.item.id,
                                   imageUrl: movie.poster,
-                                  subtitle: movie.year ?? 'MKV',
+                                  subtitle: movie.accountLabel ?? movie.year,
+                                  expand: true,
+                                  autofocus: i == 0 &&
+                                      hero == null &&
+                                      _visibleFolders.isEmpty,
                                   onPressed: () => _openMovie(movie),
-                                ),
-                            ],
+                                );
+                              },
+                            ),
                           ),
-                        ),
                       ],
-                      if (_foldersOnly.isNotEmpty) ...[
-                        const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                        SliverToBoxAdapter(
-                          child: ContentRail(
-                            title: 'โฟลเดอร์',
-                            children: [
-                              for (final folder in _foldersOnly)
-                                PosterCard(
-                                  title: folder.name,
-                                  seed: folder.id,
-                                  width: 220,
-                                  height: 124,
-                                  subtitle: 'เปิดโฟลเดอร์',
-                                  onPressed: () => _openFolder(folder),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (_movies.isEmpty && _foldersOnly.isEmpty)
+                      if (_visibleMovies.isEmpty &&
+                          _visibleFolders.isEmpty &&
+                          !(app.source == MediaSource.overview &&
+                              (continueItems.isNotEmpty || favoriteItems.isNotEmpty)))
                         SliverFillRemaining(
                           hasScrollBody: false,
                           child: Center(
-                            child: Text(
-                              'ยังไม่มีไฟล์วิดีโอในโฟลเดอร์นี้',
-                              style: bodyStyle(size: 20, color: themeMuted),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _query.isNotEmpty
+                                      ? app.tr('noSearchResults', {'query': _search.text.trim()})
+                                      : app.source == MediaSource.overview
+                                          ? app.tr('noOverview')
+                                          : app.tr('noVideosInFolder'),
+                                  style: bodyStyle(size: 20, color: themeMuted),
+                                ),
+                                if (_query.isEmpty) ...[
+                                  const SizedBox(height: 20),
+                                  if (app.source == MediaSource.local)
+                                    TvButton(
+                                      label: app.tr('chooseOtherFolder'),
+                                      autofocus: true,
+                                      onPressed: _pickLocalFolder,
+                                    ),
+                                  if (app.source == MediaSource.overview)
+                                    TvButton(
+                                      label: app.tr('profiles'),
+                                      autofocus: true,
+                                      onPressed: _openProfiles,
+                                    ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
                       const SliverToBoxAdapter(child: SizedBox(height: 56)),
                     ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sourceBar(AppState app) {
+    final overviewOn = app.source == MediaSource.overview;
+    final localOn = app.source == MediaSource.local;
+    final activeId = app.session?.id;
+    final canGoUp = (_folders?.length ?? 0) > 1;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 4, 56, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                TvButton(
+                  label: app.tr('all'),
+                  filled: overviewOn,
+                  icon: Icons.apps_rounded,
+                  onPressed: _useOverview,
+                ),
+                const SizedBox(width: 12),
+                TvButton(
+                  label: app.tr('thisDevice'),
+                  filled: localOn,
+                  icon: Icons.phone_android_rounded,
+                  onPressed: _useLocal,
+                ),
+                for (final account in app.accounts) ...[
+                  const SizedBox(width: 12),
+                  TvButton(
+                    label: account.title,
+                    filled: app.source == MediaSource.oneDrive && account.id == activeId,
+                    icon: Icons.cloud_outlined,
+                    onPressed: () => _useOneDriveAccount(account),
+                  ),
+                ],
+                if (localOn) ...[
+                  const SizedBox(width: 12),
+                  TvButton(label: app.tr('changeFolder'), filled: false, onPressed: _pickLocalFolder),
+                ],
+              ],
+            ),
+          ),
+          if (canGoUp) ...[
+            const SizedBox(height: 12),
+            TvFocus(
+              onPressed: _goUp,
+              borderRadius: 8,
+              scale: 1.04,
+              child: Container(
+                color: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.arrow_back_rounded, size: 22, color: themeText),
+                    const SizedBox(width: 10),
+                    Text(
+                      app.tr('goBack'),
+                      style: bodyStyle(size: 18, weight: FontWeight.w600),
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -438,18 +914,61 @@ class _HomeScreenState extends State<HomeScreen> {
               style: bodyStyle(size: 16, color: themeMuted),
             ),
           ),
-          if (crumbs.length > 1) ...[
-            TvButton(label: 'ย้อนกลับ', filled: false, onPressed: _goUp),
-            const SizedBox(width: 12),
-          ],
-          TvButton(label: 'รีเฟรช', filled: false, onPressed: _load),
+              SizedBox(
+            width: 220,
+            height: 44,
+            child: TextField(
+              controller: _search,
+              focusNode: _searchFocus,
+              style: bodyStyle(size: 14),
+              cursorColor: themeAccent,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: app.tr('searchHint'),
+                hintStyle: bodyStyle(size: 14, color: themeFaint),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20, color: themeMuted),
+                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: app.tr('clearSearch'),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        onPressed: () {
+                          _search.clear();
+                          _searchFocus.requestFocus();
+                        },
+                        icon: const Icon(Icons.close_rounded, size: 18, color: themeMuted),
+                      ),
+                filled: true,
+                fillColor: themePanel,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: themeFocus, width: 2),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(width: 12),
           TvButton(
-            label: app.session?.displayName ?? 'OneDrive',
+            label: app.tr('refresh'),
             filled: false,
-            onPressed: () async {
-              await app.signOut();
-            },
+            icon: Icons.refresh_rounded,
+            iconOnly: true,
+            onPressed: _load,
+          ),
+          const SizedBox(width: 12),
+          TvButton(
+            label: app.tr('profiles'),
+            filled: true,
+            icon: Icons.person_outline_rounded,
+            onPressed: _openProfiles,
           ),
         ],
       ),
@@ -458,56 +977,120 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _heroBlock(LibraryMovie? hero) {
     if (hero == null) {
-      return const SizedBox(height: 48);
+      return const SizedBox(height: 24);
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(56, 24, 56, 28),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('FEATURED', style: bodyStyle(size: 14, weight: FontWeight.w700, color: themeAccentSoft)),
-            const SizedBox(height: 10),
-            Text(hero.title, style: displayStyle(size: 52)),
-            const SizedBox(height: 12),
-            Text(
-              [
-                if (hero.year != null) hero.year!,
-                if (hero.item.name.toLowerCase().endsWith('.mkv')) 'MKV',
-                if (hero.match?.rating != null) '★ ${hero.match!.rating!.toStringAsFixed(1)}',
-                formatBytes(hero.item.size),
-              ].whereType<String>().join('  ·  '),
-              style: bodyStyle(size: 16, color: themeMuted),
-            ),
-            if (hero.overview != null) ...[
-              const SizedBox(height: 14),
-              Text(
-                hero.overview!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: bodyStyle(size: 18, color: const Color(0xFFD0D0D6)),
+    final art = hero.art;
+    final height = MediaQuery.sizeOf(context).height * 0.62;
+    return SizedBox(
+      width: double.infinity,
+      height: height.clamp(360.0, 720.0),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (art != null)
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 450),
+              child: RemoteArt(
+                key: ValueKey(art),
+                url: art,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                alignment: Alignment.center,
               ),
-            ],
-            const SizedBox(height: 28),
-            Row(
-              children: [
-                TvButton(
-                  label: 'เล่น',
-                  autofocus: true,
-                  icon: Icons.play_arrow_rounded,
-                  onPressed: () => _openMovie(hero),
-                ),
-                const SizedBox(width: 14),
-                TvButton(
-                  label: 'รายละเอียด',
-                  filled: false,
-                  onPressed: () => _openMovie(hero),
-                ),
-              ],
+            )
+          else
+            const ColoredBox(color: themeRaised),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xF2050508),
+                  Color(0x99050508),
+                  Color(0x22050508),
+                  Color(0x00050508),
+                ],
+                stops: [0, 0.28, 0.62, 1],
+              ),
             ),
-          ],
-        ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x66050508),
+                  Color(0x00050508),
+                  Color(0xE6050508),
+                  themeBg,
+                ],
+                stops: [0, 0.35, 0.82, 1],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(56, 36, 56, 40),
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('FEATURED', style: bodyStyle(size: 14, weight: FontWeight.w700, color: themeAccentSoft)),
+                    const SizedBox(height: 10),
+                    Text(hero.title, style: displayStyle(size: 56)),
+                    const SizedBox(height: 12),
+                    Text(
+                      [
+                        if (hero.year != null) hero.year!,
+                        if (hero.item.name.toLowerCase().endsWith('.mkv')) 'MKV',
+                        if (hero.item.isLocal) 'Local',
+                        if (hero.match?.rating != null) '★ ${hero.match!.rating!.toStringAsFixed(1)}',
+                        formatBytes(hero.item.size),
+                      ].whereType<String>().join('  ·  '),
+                      style: bodyStyle(size: 16, color: themeMuted),
+                    ),
+                    if (hero.overview != null) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        hero.overview!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: bodyStyle(size: 18, color: const Color(0xFFD0D0D6)),
+                      ),
+                    ],
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        TvButton(
+                          label: () {
+                            final progress = AppScope.of(context).progressFor(hero.libraryRef?.key ?? '');
+                            if (progress == null) return 'เล่น';
+                            return 'เล่นต่อ · ${formatWatchProgress(progress.positionMs, progress.durationMs)}';
+                          }(),
+                          autofocus: true,
+                          icon: Icons.play_arrow_rounded,
+                          onPressed: () => _openMovie(hero),
+                        ),
+                        const SizedBox(width: 14),
+                        TvButton(
+                          label: 'รายละเอียด',
+                          filled: false,
+                          onPressed: () => _openMovie(hero),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -521,9 +1104,24 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text(message, textAlign: TextAlign.center, style: bodyStyle(size: 20, color: themeDanger)),
             const SizedBox(height: 24),
-            TvButton(label: 'ลองใหม่', autofocus: true, onPressed: _load),
+            TvButton(
+              label: AppScope.of(context).tr('tryAgain'),
+              autofocus: true,
+              onPressed: _load,
+            ),
             const SizedBox(height: 12),
-            TvButton(label: 'เชื่อม OneDrive ใหม่', filled: false, onPressed: _openConnect),
+            TvButton(
+              label: AppScope.of(context).tr('pickLocalFolder'),
+              filled: false,
+              onPressed: _pickLocalFolder,
+            ),
+            const SizedBox(height: 12),
+            TvButton(
+              label: AppScope.of(context).tr('profiles'),
+              filled: false,
+              icon: Icons.person_outline_rounded,
+              onPressed: _openProfiles,
+            ),
           ],
         ),
       ),

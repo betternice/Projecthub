@@ -34,6 +34,22 @@ String? formatBytes(int? bytes) {
   return '${(bytes / (1024 * 1024)).round().clamp(1, 1 << 30)} MB';
 }
 
+String formatWatchClock(int milliseconds) {
+  final total = (milliseconds / 1000).round().clamp(0, 1 << 30);
+  final hours = total ~/ 3600;
+  final minutes = (total % 3600) ~/ 60;
+  final seconds = total % 60;
+  if (hours > 0) {
+    return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+  return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+}
+
+String formatWatchProgress(int positionMs, int durationMs) {
+  if (durationMs <= 0) return 'เล่นไปแล้ว ${formatWatchClock(positionMs)}';
+  return '${formatWatchClock(positionMs)} / ${formatWatchClock(durationMs)}';
+}
+
 String? formatClock(int? milliseconds) {
   if (milliseconds == null || milliseconds < 1000) return null;
   final total = (milliseconds / 1000).round();

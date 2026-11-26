@@ -98,6 +98,7 @@ Future<MediaMatch?> findWikiMovie(String filename) async {
     posterUrl: poster,
     backdropUrl: poster,
     rating: null,
+    genres: const [],
   );
 }
 
@@ -178,6 +179,7 @@ Future<MediaDetail> wikiMediaDetail(MediaMatch match) async {
       posterUrl: poster,
       backdropUrl: next.backdropUrl ?? poster,
       rating: next.rating,
+      genres: next.genres,
     );
   }
 
@@ -189,6 +191,7 @@ Future<MediaDetail> wikiMediaDetail(MediaMatch match) async {
       .map((id) => CastMember(name: names[id] ?? ''))
       .where((person) => person.name.isNotEmpty)
       .toList();
+  final genres = genreIds.map((id) => names[id] ?? '').where((name) => name.isNotEmpty).toList();
 
   return MediaDetail(
     match: MediaMatch(
@@ -201,9 +204,10 @@ Future<MediaDetail> wikiMediaDetail(MediaMatch match) async {
       posterUrl: next.posterUrl,
       backdropUrl: next.backdropUrl,
       rating: next.rating,
+      genres: genres.isNotEmpty ? genres : next.genres,
     ),
     runtime: _claimMinutes(claims),
-    genres: genreIds.map((id) => names[id] ?? '').where((name) => name.isNotEmpty).toList(),
+    genres: genres.isNotEmpty ? genres : next.genres,
     director: directorIds.map((id) => names[id] ?? '').where((name) => name.isNotEmpty).firstOrNull,
     cast: cast,
   );

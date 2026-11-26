@@ -125,6 +125,7 @@ class TvButton extends StatelessWidget {
     this.autofocus = false,
     this.filled = true,
     this.icon,
+    this.iconOnly = false,
     this.focusNode,
   });
 
@@ -133,10 +134,12 @@ class TvButton extends StatelessWidget {
   final bool autofocus;
   final bool filled;
   final IconData? icon;
+  final bool iconOnly;
   final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
+    assert(!iconOnly || icon != null, 'iconOnly requires an icon');
     return TvFocus(
       autofocus: autofocus,
       focusNode: focusNode,
@@ -146,17 +149,21 @@ class TvButton extends StatelessWidget {
       child: ColoredBox(
         color: filled ? themeAccent : const Color(0x33FFFFFF),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 22, color: themeText),
-                const SizedBox(width: 10),
-              ],
-              Text(label, style: bodyStyle(size: 18, weight: FontWeight.w600)),
-            ],
-          ),
+          padding: iconOnly
+              ? const EdgeInsets.all(14)
+              : const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+          child: iconOnly
+              ? Icon(icon, size: 22, color: themeText)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 22, color: themeText),
+                      const SizedBox(width: 10),
+                    ],
+                    Text(label, style: bodyStyle(size: 18, weight: FontWeight.w600)),
+                  ],
+                ),
         ),
       ),
     );

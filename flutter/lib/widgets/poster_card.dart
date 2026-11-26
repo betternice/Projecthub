@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'remote_art.dart';
 import 'tv_focus.dart';
 
 class PosterCard extends StatelessWidget {
@@ -13,6 +14,8 @@ class PosterCard extends StatelessWidget {
     this.subtitle,
     this.width = 168,
     this.height = 252,
+    this.expand = false,
+    this.imageAspectRatio = 2 / 3,
     this.autofocus = false,
     this.onFocused,
     this.focusNode,
@@ -24,17 +27,75 @@ class PosterCard extends StatelessWidget {
   final String? subtitle;
   final double width;
   final double height;
+  /// Fill parent width (gallery grid cells).
+  final bool expand;
+  final double imageAspectRatio;
   final VoidCallback onPressed;
   final bool autofocus;
   final ValueChanged<bool>? onFocused;
   final FocusNode? focusNode;
 
+  Widget _art({double? w, double? h}) {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      return _Fallback(title: title, seed: seed);
+    }
+    return RemoteArt(
+      url: imageUrl!,
+      fit: BoxFit.cover,
+      width: w,
+      height: h,
+      fallback: _Fallback(title: title, seed: seed),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final labels = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: bodyStyle(size: 15, weight: FontWeight.w600),
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty)
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: bodyStyle(size: 13, color: themeMuted),
+          ),
+      ],
+    );
+
+    if (expand) {
+      // รูปกินพื้นที่ที่เหลือในช่องกริด — ไม่ล้นจาก AspectRatio + ข้อความ
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TvFocus(
+              autofocus: autofocus,
+              focusNode: focusNode,
+              onPressed: onPressed,
+              onFocused: onFocused,
+              borderRadius: 10,
+              child: SizedBox.expand(child: _art()),
+            ),
+          ),
+          const SizedBox(height: 8),
+          labels,
+        ],
+      );
+    }
+
     return SizedBox(
       width: width,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           TvFocus(
             autofocus: autofocus,
@@ -42,34 +103,10 @@ class PosterCard extends StatelessWidget {
             onPressed: onPressed,
             onFocused: onFocused,
             borderRadius: 10,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: imageUrl == null || imageUrl!.isEmpty
-                  ? _Fallback(title: title, seed: seed)
-                  : Image.network(
-                      imageUrl!,
-                      fit: BoxFit.cover,
-                      width: width,
-                      height: height,
-                      errorBuilder: (_, __, ___) => _Fallback(title: title, seed: seed),
-                    ),
-            ),
+            child: SizedBox(width: width, height: height, child: _art(w: width, h: height)),
           ),
           const SizedBox(height: 10),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: bodyStyle(size: 15, weight: FontWeight.w600),
-          ),
-          if (subtitle != null && subtitle!.isNotEmpty)
-            Text(
-              subtitle!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: bodyStyle(size: 13, color: themeMuted),
-            ),
+          labels,
         ],
       ),
     );

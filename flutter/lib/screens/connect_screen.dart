@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../auth/azure_config.dart';
 import '../auth/microsoft.dart';
 import '../models.dart';
 import '../onedrive/graph.dart';
@@ -11,6 +12,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/tv_focus.dart';
 
+/// เพิ่มบัญชี Microsoft/OneDrive (รองรับหลายบัญชี)
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
 
@@ -19,34 +21,35 @@ class ConnectScreen extends StatefulWidget {
 }
 
 class _ConnectScreenState extends State<ConnectScreen> {
-  final _client = TextEditingController();
-  final _clientFocus = FocusNode();
+  late final TextEditingController _name;
   DeviceLogin? _pending;
   String? _error;
   var _busy = false;
   Timer? _timer;
   var _waitSeconds = 5;
-  var _filledSavedId = false;
+  var _filled = false;
 
-  static final _guid = RegExp(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    caseSensitive: false,
-  );
+  String get _clientId => kAzureClientId;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: 'My OneDrive');
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_filledSavedId) return;
-    final saved = AppScope.of(context).savedClientId;
-    if (saved.isNotEmpty) _client.text = saved;
-    _filledSavedId = true;
+    if (_filled) return;
+    final app = AppScope.of(context);
+    _name.text = app.suggestedOneDriveLabel();
+    _filled = true;
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _client.dispose();
-    _clientFocus.dispose();
+    _name.dispose();
     super.dispose();
   }
 
@@ -58,7 +61,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Future<void> _tick(DeviceLogin pending) async {
     final app = AppScope.of(context);
     try {
-      final result = await pollDeviceToken(_client.text.trim(), pending.deviceCode);
+      final result = await pollDeviceToken(_clientId, pending.deviceCode);
       if (!mounted || _pending?.deviceCode != pending.deviceCode) return;
       if (result.status == 'pending' || result.status == 'slow_down') {
         if (result.status == 'slow_down') _waitSeconds += 5;
@@ -67,14 +70,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
       }
       if (result.status == 'success' && result.tokens != null) {
         final tokens = result.tokens!;
-        final name = await fetchProfileName(tokens.accessToken);
+        final profile = await fetchProfile(tokens.accessToken);
         if (!mounted) return;
-        await app.saveSession(Session(
+        await app.saveClientId(_clientId);
+        await app.addOrUpdateAccount(Session(
+          id: profile.userPrincipalName,
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           expiresAt: tokens.expiresAt,
-          displayName: name,
-          clientId: _client.text.trim(),
+          displayName: profile.displayName,
+          clientId: _clientId,
+          label: _name.text.trim().isEmpty ? profile.displayName : _name.text.trim(),
+          accountHint: profile.userPrincipalName,
         ));
         if (mounted) Navigator.of(context).pop(true);
         return;
@@ -92,18 +99,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
     }
   }
 
-  Future<void> _start() async {
-    final id = _client.text.trim();
+  Future<void> _add() async {
     setState(() {
       _error = null;
       _busy = true;
     });
     try {
-      await AppScope.of(context).saveClientId(id);
-      if (!_guid.hasMatch(id)) {
-        throw Exception('ใส่ Application (client) ID จาก Azure ให้ถูกต้อง');
-      }
-      final pending = await requestDeviceCode(id);
+      await AppScope.of(context).saveClientId(_clientId);
+      final pending = await requestDeviceCode(_clientId);
       if (!mounted) return;
       setState(() {
         _pending = pending;
@@ -142,9 +145,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 920),
+            constraints: const BoxConstraints(maxWidth: 720),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 56, vertical: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 28),
               child: pending == null ? _setupForm() : _deviceCode(pending),
             ),
           ),
@@ -155,60 +158,63 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
   Widget _setupForm() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('NICE', style: brandStyle(size: 56, color: themeAccent)),
-        const SizedBox(height: 10),
-        Text('เชื่อม OneDrive', style: displayStyle(size: 40)),
+        Row(
+          children: [
+            TvButton(
+              label: 'กลับ',
+              filled: false,
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            const Spacer(),
+            Text(AppScope.of(context).tr('addOneDrive'), style: displayStyle(size: 28)),
+            const Spacer(),
+            const SizedBox(width: 96),
+          ],
+        ),
+        const SizedBox(height: 28),
+        _field(
+          label: 'Name',
+          child: TextField(
+            controller: _name,
+            style: bodyStyle(size: 20),
+            cursorColor: themeAccent,
+            decoration: _inputDecoration(),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _field(
+          label: 'Protocol',
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1E),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('OneDrive', style: bodyStyle(size: 20, color: themeMuted)),
+          ),
+        ),
         const SizedBox(height: 12),
         Text(
-          'ใส่ Application (client) ID จาก Azure แล้วใช้รีโมททีวียืนยันบนมือถือหรือคอมพิวเตอร์',
-          style: bodyStyle(size: 18, color: themeMuted),
-        ),
-        const SizedBox(height: 36),
-        TextField(
-          controller: _client,
-          focusNode: _clientFocus,
-          autofocus: true,
-          style: bodyStyle(size: 20),
-          cursorColor: themeAccent,
-          decoration: InputDecoration(
-            labelText: 'Azure Application (client) ID',
-            labelStyle: bodyStyle(size: 16, color: themeMuted),
-            filled: true,
-            fillColor: themePanel,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: themeFocus, width: 2),
-            ),
-          ),
-          onSubmitted: (_) {
-            if (!_busy) _start();
-          },
+          'ล็อกอินบัญชี Microsoft อื่นได้เรื่อยๆ — แต่ละบัญชีจะเป็นคลังแยก',
+          style: bodyStyle(size: 14, color: themeMuted),
         ),
         if (_error != null) ...[
           const SizedBox(height: 16),
           Text(_error!, style: bodyStyle(size: 16, color: themeDanger)),
         ],
-        const SizedBox(height: 28),
-        Row(
-          children: [
-            TvButton(
-              label: _busy ? 'กำลังเชื่อม…' : 'เริ่มเชื่อม OneDrive',
-              onPressed: _busy ? () {} : _start,
-              autofocus: false,
-              icon: Icons.cloud_outlined,
-            ),
-            const SizedBox(width: 16),
-            TvButton(
-              label: 'ยกเลิก',
-              filled: false,
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-          ],
+        const Spacer(),
+        Center(
+          child: TvButton(
+            label: _busy ? 'กำลังเชื่อม…' : 'Add',
+            autofocus: true,
+            onPressed: _busy ? () {} : _add,
+            icon: Icons.add,
+          ),
         ),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -218,15 +224,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text('NICE', style: brandStyle(size: 56, color: themeAccent)),
-        const SizedBox(height: 10),
-        Text('ยืนยันบนอุปกรณ์อื่น', style: displayStyle(size: 40)),
+        Text('Sign in with Microsoft', style: displayStyle(size: 34)),
         const SizedBox(height: 12),
         Text(
-          'เปิด ${pending.verificationUri} แล้วใส่รหัสด้านล่าง',
+          'เปิด ${pending.verificationUri} แล้วใส่รหัส — ใช้บัญชี Microsoft ที่ต้องการเพิ่ม',
           style: bodyStyle(size: 18, color: themeMuted),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 36),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 28),
@@ -237,7 +241,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           ),
           child: Column(
             children: [
-              Text(pending.userCode, style: brandStyle(size: 72, color: themeText)),
+              Text(pending.userCode, style: brandStyle(size: 64, color: themeText)),
               const SizedBox(height: 8),
               Text('กำลังรอการยืนยัน…', style: bodyStyle(size: 16, color: themeMuted)),
             ],
@@ -250,7 +254,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
         const SizedBox(height: 28),
         Row(
           children: [
-            TvButton(label: 'เปิดหน้ายืนยัน', autofocus: true, onPressed: _openVerify, icon: Icons.open_in_new),
+            TvButton(label: 'เปิดหน้าเข้าสู่ระบบ', autofocus: true, onPressed: _openVerify, icon: Icons.open_in_new),
             const SizedBox(width: 16),
             TvButton(label: 'คัดลอกรหัส', filled: false, onPressed: _copyCode),
             const SizedBox(width: 16),
@@ -265,6 +269,32 @@ class _ConnectScreenState extends State<ConnectScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _field({required String label, required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: bodyStyle(size: 14, color: themeMuted)),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+
+  InputDecoration _inputDecoration({String? hint}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: bodyStyle(size: 16, color: const Color(0xFF55555C)),
+      filled: true,
+      fillColor: themePanel,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: themeFocus, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
   }
 }
