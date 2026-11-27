@@ -1,31 +1,33 @@
-# Movie Collection
+# Niceflix
 
-แอป Android สำหรับเปิดคลังหนังจากไฟล์ใน OneDrive มีปก เรื่องย่อ และหน้ารายละเอียด แล้วเล่นไฟล์ด้วยตัวเล่นของเครื่อง
+แอปดูหนังจาก OneDrive — Android TV (APK) และเว็บ
 
-## รันบนมือถือ
+โค้ดอยู่ที่โฟลเดอร์ [`flutter/`](flutter/)
 
-ติดตั้ง Expo Go จาก Play Store แล้วในโฟลเดอร์นี้รัน
+## Android TV (APK)
 
 ```bash
-npm start
+cd flutter
+flutter pub get
+flutter build apk --release
 ```
 
-สแกน QR ที่ขึ้นในเทอร์มินัลด้วย Expo Go
+ไฟล์อยู่ที่ `flutter/build/app/outputs/flutter-apk/app-release.apk`
 
-## เชื่อม OneDrive
+## เว็บ (Vercel)
 
-1. เปิด [portal.azure.com](https://portal.azure.com) แล้วสร้าง App registration ชื่อ Movie Collection
-2. เลือกบัญชี Microsoft ทั้งส่วนตัวและที่ทำงาน
-3. ไปที่ Authentication แล้วตั้ง Allow public client flows เป็น Yes
-4. เพิ่มสิทธิ์ Microsoft Graph แบบ Delegated ชื่อ `Files.Read`
-5. นำ Application (client) ID มาใส่ในหน้าเข้าสู่ระบบของแอป
+Build อัตโนมัติจาก `vercel.json` ที่ root → รัน `flutter/scripts/vercel-build.sh`
 
-จากนั้นแอปจะให้รหัสสำหรับยืนยันที่หน้า Microsoft แล้วยืนยันด้วยบัญชีที่เป็นเจ้าของไฟล์หนัง
+หรือ build เองแล้ว deploy:
 
-## ปกและรายละเอียด
+```bash
+cd flutter
+flutter build web --release --no-wasm-dry-run
+npx vercel deploy build/web --prod --project niceflix
+```
 
-แอปจับชื่อไฟล์แล้วดึงปก ภาพ และเรื่องย่อมาให้เอง ถ้าใส่ API key จาก [themoviedb.org](https://www.themoviedb.org/settings/api) จะได้รูปนักแสดงเพิ่ม
+Production: [https://niceflix-ten.vercel.app](https://niceflix-ten.vercel.app)
 
-## การเล่น
+## OneDrive
 
-ตอนกดเล่น แอปขอลิงก์ไฟล์ต้นฉบับจาก OneDrive แล้วส่งให้ตัวเล่นของ Android ไฟล์ mp4 และ mkv ที่เป็นวิดีโอทั่วไปเล่นได้ ไฟล์ที่เครื่องถอดรหัสไม่ได้จะเล่นไม่ได้
+ใช้ Microsoft device-code login (เหมือนบน TV) — สิทธิ์ Graph `Files.Read`
