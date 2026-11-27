@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -106,6 +107,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
     });
     try {
       await AppScope.of(context).saveClientId(_clientId);
+      if (kIsWeb) {
+        // Browser blocks device-code CORS — redirect to Microsoft instead.
+        await startWebMicrosoftLogin(
+          clientId: _clientId,
+          accountLabel: _name.text.trim().isEmpty ? 'My OneDrive' : _name.text.trim(),
+        );
+        return;
+      }
       final pending = await requestDeviceCode(_clientId);
       if (!mounted) return;
       setState(() {
@@ -118,7 +127,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = _message(error);
+        _error = friendlyHttpError(error);
       });
     }
   }
@@ -135,7 +144,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     await Clipboard.setData(ClipboardData(text: code));
   }
 
-  String _message(Object error) => error.toString().replaceFirst('Exception: ', '');
+  String _message(Object error) => friendlyHttpError(error);
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +207,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
         ),
         const SizedBox(height: 12),
         Text(
-          'ล็อกอินบัญชี Microsoft อื่นได้เรื่อยๆ — แต่ละบัญชีจะเป็นคลังแยก',
+          kIsWeb
+              ? 'บนเว็บจะเปิดหน้า Microsoft ให้ล็อกอิน แล้วกลับมาที่ Niceflix อัตโนมัติ'
+              : 'ล็อกอินบัญชี Microsoft อื่นได้เรื่อยๆ — แต่ละบัญชีจะเป็นคลังแยก',
           style: bodyStyle(size: 14, color: themeMuted),
         ),
         if (_error != null) ...[

@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   cached_network_image: ^4.0.7
+  crypto: ^3.0.6
   file_picker: ^13.4.1
   flutter:
     sdk: flutter

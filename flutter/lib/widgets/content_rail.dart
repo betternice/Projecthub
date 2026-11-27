@@ -21,16 +21,16 @@ class ContentRail extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 14),
-          child: Text(title, style: bodyStyle(size: 22, weight: FontWeight.w700)),
+          padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 10),
+          child: Text(title, style: bodyStyle(size: 18, weight: FontWeight.w700)),
         ),
         SizedBox(
-          height: 310,
+          height: 268,
           child: ListView.separated(
             padding: padding,
             scrollDirection: Axis.horizontal,
             itemCount: children.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 18),
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (_, index) => children[index],
           ),
         ),

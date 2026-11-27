@@ -539,6 +539,16 @@ class _HomeScreenState extends State<HomeScreen> {
             body: Center(child: CircularProgressIndicator(color: themeAccent)),
           );
         }
+        final bootMessage = app.bootMessage;
+        if (bootMessage != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted || app.bootMessage != bootMessage) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(bootMessage), duration: const Duration(seconds: 6)),
+            );
+            app.clearBootMessage();
+          });
+        }
         final needsSetup = app.source != MediaSource.overview &&
             app.source == MediaSource.local &&
             (app.localRootPath == null || app.localRootPath!.isEmpty) &&
@@ -740,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: ContentGallery(
                               title: app.tr('folders'),
                               itemCount: _visibleFolders.length,
-                              maxCrossAxisExtent: 220,
+                              maxCrossAxisExtent: 200,
                               childAspectRatio: 1.15,
                               itemBuilder: (context, i) {
                                 final folder = _visibleFolders[i];
@@ -981,10 +991,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return const SizedBox(height: 24);
     }
     final art = hero.art;
-    final height = MediaQuery.sizeOf(context).height * 0.62;
+    // Keep hero under half the screen so rails/gallery stay visible on TV.
+    final height = MediaQuery.sizeOf(context).height * 0.42;
     return SizedBox(
       width: double.infinity,
-      height: height.clamp(360.0, 720.0),
+      height: height.clamp(280.0, 480.0),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1033,19 +1044,19 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(56, 36, 56, 40),
+            padding: const EdgeInsets.fromLTRB(48, 24, 48, 28),
             child: Align(
               alignment: Alignment.bottomLeft,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
+                constraints: const BoxConstraints(maxWidth: 640),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('FEATURED', style: bodyStyle(size: 14, weight: FontWeight.w700, color: themeAccentSoft)),
-                    const SizedBox(height: 10),
-                    Text(hero.title, style: displayStyle(size: 56)),
-                    const SizedBox(height: 12),
+                    Text('FEATURED', style: bodyStyle(size: 12, weight: FontWeight.w700, color: themeAccentSoft)),
+                    const SizedBox(height: 8),
+                    Text(hero.title, style: displayStyle(size: 40)),
+                    const SizedBox(height: 8),
                     Text(
                       [
                         if (hero.year != null) hero.year!,
@@ -1054,18 +1065,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (hero.match?.rating != null) '★ ${hero.match!.rating!.toStringAsFixed(1)}',
                         formatBytes(hero.item.size),
                       ].whereType<String>().join('  ·  '),
-                      style: bodyStyle(size: 16, color: themeMuted),
+                      style: bodyStyle(size: 14, color: themeMuted),
                     ),
                     if (hero.overview != null) ...[
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       Text(
                         hero.overview!,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: bodyStyle(size: 18, color: const Color(0xFFD0D0D6)),
+                        style: bodyStyle(size: 15, color: const Color(0xFFD0D0D6)),
                       ),
                     ],
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 18),
                     Row(
                       children: [
                         TvButton(

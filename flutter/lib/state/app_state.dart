@@ -27,6 +27,7 @@ class AppState extends ChangeNotifier {
   String? activeAccountId;
   String savedClientId = '';
   String? tmdbKey;
+  String? bootMessage;
   MediaSource source = MediaSource.overview;
   String? localRootPath;
   List<LibraryRef> favorites = [];
@@ -120,6 +121,10 @@ class AppState extends ChangeNotifier {
       await _refreshActiveIfNeeded();
     }
 
+    if (kIsWeb) {
+      await _completeWebOAuthIfNeeded();
+    }
+
     if (source == MediaSource.oneDrive && accounts.isEmpty) {
       source = MediaSource.overview;
       await _prefs?.setString('mediaSource', mediaSourceKey(source));
@@ -132,6 +137,32 @@ class AppState extends ChangeNotifier {
 
     // ดึงซิงก์จาก OneDrive เงียบๆ หลังพร้อม
     unawaited(pullProfileSync());
+  }
+
+  Future<void> _completeWebOAuthIfNeeded() async {
+    try {
+      final result = await completeWebMicrosoftLoginIfNeeded(
+        savedClientId.isNotEmpty ? savedClientId : kAzureClientId,
+      );
+      if (result == null) return;
+      final profile = await fetchProfile(result.tokens.accessToken);
+      await saveClientId(savedClientId.isNotEmpty ? savedClientId : kAzureClientId);
+      await addOrUpdateAccount(Session(
+        id: profile.userPrincipalName,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+        expiresAt: result.tokens.expiresAt,
+        displayName: profile.displayName,
+        clientId: savedClientId.isNotEmpty ? savedClientId : kAzureClientId,
+        label: result.label.trim().isEmpty ? profile.displayName : result.label.trim(),
+        accountHint: profile.userPrincipalName,
+      ));
+      source = MediaSource.oneDrive;
+      await _prefs?.setString('mediaSource', mediaSourceKey(source));
+      bootMessage = 'เชื่อม OneDrive แล้ว: ${profile.displayName}';
+    } catch (error) {
+      bootMessage = friendlyHttpError(error);
+    }
   }
 
   Future<void> _bootProfiles() async {
@@ -668,6 +699,12 @@ class AppState extends ChangeNotifier {
   Future<void> saveClientId(String clientId) async {
     savedClientId = clientId;
     await _prefs?.setString('clientId', clientId);
+    notifyListeners();
+  }
+
+  void clearBootMessage() {
+    if (bootMessage == null) return;
+    bootMessage = null;
     notifyListeners();
   }
 
