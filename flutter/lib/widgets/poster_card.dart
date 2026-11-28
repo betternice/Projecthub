@@ -12,8 +12,8 @@ class PosterCard extends StatelessWidget {
     required this.onPressed,
     this.imageUrl,
     this.subtitle,
-    this.width = 140,
-    this.height = 210,
+    this.width = 112,
+    this.height = 168,
     this.expand = false,
     this.imageAspectRatio = 2 / 3,
     this.autofocus = false,
@@ -58,14 +58,14 @@ class PosterCard extends StatelessWidget {
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: bodyStyle(size: 15, weight: FontWeight.w600),
+          style: bodyStyle(size: 13, weight: FontWeight.w600),
         ),
         if (subtitle != null && subtitle!.isNotEmpty)
           Text(
             subtitle!,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: bodyStyle(size: 13, color: themeMuted),
+            style: bodyStyle(size: 11, color: themeMuted),
           ),
       ],
     );

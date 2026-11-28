@@ -59,6 +59,19 @@ TextStyle bodyStyle({double size = 18, FontWeight weight = FontWeight.w400, Colo
   );
 }
 
+/// Shrink TV UI without Transform.scale (that composites video → stutter).
+/// Stronger text clamp + slightly tighter visual density.
+Widget densifyUi(BuildContext context, Widget? child) {
+  final mq = MediaQuery.of(context);
+  return MediaQuery(
+    data: mq.copyWith(
+      textScaler: TextScaler.linear(mq.textScaler.scale(1).clamp(0.62, 0.72)),
+      boldText: false,
+    ),
+    child: child ?? const SizedBox.shrink(),
+  );
+}
+
 ThemeData buildNiceTheme() {
   final base = ThemeData(
     brightness: Brightness.dark,

@@ -9,21 +9,29 @@ class TvFocus extends StatefulWidget {
     required this.child,
     required this.onPressed,
     this.onFocused,
+    this.onKeyEvent,
     this.focusNode,
     this.autofocus = false,
     this.scale = 1.08,
     this.borderRadius = 10,
     this.enabled = true,
+    /// Flat list row (Netflix-style): white focus ring, no lift shadow.
+    this.listItem = false,
+    /// True circle focus ring / clip (player transport buttons).
+    this.circle = false,
   });
 
   final Widget child;
   final VoidCallback onPressed;
   final ValueChanged<bool>? onFocused;
+  final KeyEventResult Function(FocusNode node, KeyEvent event)? onKeyEvent;
   final FocusNode? focusNode;
   final bool autofocus;
   final double scale;
   final double borderRadius;
   final bool enabled;
+  final bool listItem;
+  final bool circle;
 
   @override
   State<TvFocus> createState() => _TvFocusState();
@@ -51,6 +59,8 @@ class _TvFocusState extends State<TvFocus> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (!widget.enabled) return KeyEventResult.ignored;
+    final custom = widget.onKeyEvent?.call(node, event);
+    if (custom != null && custom != KeyEventResult.ignored) return custom;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.select ||
@@ -66,49 +76,67 @@ class _TvFocusState extends State<TvFocus> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _node,
-      autofocus: widget.autofocus,
-      canRequestFocus: widget.enabled,
-      onKeyEvent: _onKey,
-      onFocusChange: (hasFocus) {
-        if (hasFocus == _focused) return;
-        setState(() => _focused = hasFocus);
-        widget.onFocused?.call(hasFocus);
+    // Actions+ActivateIntent so TV Select/OK works even when HardwareKeyboard
+    // or Shortcuts deliver activation instead of raw KeyDown on Focus.
+    return Actions(
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            if (widget.enabled) widget.onPressed();
+            return null;
+          },
+        ),
       },
-      child: GestureDetector(
-        onTap: widget.enabled
-            ? () {
-                _node.requestFocus();
-                widget.onPressed();
-              }
-            : null,
-        child: AnimatedScale(
-          scale: _focused ? widget.scale : 1,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
+      child: Focus(
+        focusNode: _node,
+        autofocus: widget.autofocus,
+        canRequestFocus: widget.enabled,
+        onKeyEvent: _onKey,
+        onFocusChange: (hasFocus) {
+          if (hasFocus == _focused) return;
+          setState(() => _focused = hasFocus);
+          widget.onFocused?.call(hasFocus);
+        },
+        child: GestureDetector(
+          onTap: widget.enabled
+              ? () {
+                  _node.requestFocus();
+                  widget.onPressed();
+                }
+              : null,
+          child: AnimatedScale(
+            scale: widget.listItem ? 1 : (_focused ? widget.scale : 1),
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.borderRadius),
-              border: Border.all(
-                color: _focused ? themeFocus : Colors.transparent,
-                width: _focused ? 3 : 0,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                shape: widget.circle ? BoxShape.circle : BoxShape.rectangle,
+                borderRadius: widget.circle ? null : BorderRadius.circular(widget.borderRadius),
+                border: Border.all(
+                  color: _focused ? themeFocus : Colors.transparent,
+                  width: _focused ? (widget.listItem ? 2.5 : 3) : 0,
+                ),
+                color: widget.listItem && _focused ? const Color(0x22FFFFFF) : null,
+                boxShadow: (!widget.listItem && _focused)
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          blurRadius: 28,
+                          offset: const Offset(0, 16),
+                        ),
+                      ]
+                    : const [],
               ),
-              boxShadow: _focused
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        blurRadius: 28,
-                        offset: const Offset(0, 16),
+              child: widget.circle
+                  ? ClipOval(child: widget.child)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        (widget.borderRadius - 1).clamp(0, 100).toDouble(),
                       ),
-                    ]
-                  : const [],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(widget.borderRadius - 1),
-              child: widget.child,
+                      child: widget.child,
+                    ),
             ),
           ),
         ),
@@ -141,7 +169,7 @@ class TvButton extends StatelessWidget {
   final FocusNode? focusNode;
 
   /// Shared bar control height (กลับ / ภาษา / คลัง / จัดการ).
-  static const barHeight = 50.0;
+  static const barHeight = 40.0;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +187,7 @@ class TvButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Center(
-            child: Text(label, style: bodyStyle(size: 15, weight: FontWeight.w700)),
+            child: Text(label, style: bodyStyle(size: 13, weight: FontWeight.w700)),
           ),
         ),
       );
@@ -167,15 +195,15 @@ class TvButton extends StatelessWidget {
       inner = SizedBox(
         height: barHeight,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 22),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 22, color: themeText),
-                const SizedBox(width: 10),
+                Icon(icon, size: 18, color: themeText),
+                const SizedBox(width: 8),
               ],
-              Text(label, style: bodyStyle(size: 18, weight: FontWeight.w600)),
+              Text(label, style: bodyStyle(size: 15, weight: FontWeight.w600)),
             ],
           ),
         ),

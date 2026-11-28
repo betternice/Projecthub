@@ -58,14 +58,9 @@ class _NiceAppState extends State<NiceApp> {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            // TrueID / some Android TV boxes inflate system text scale → UI overcrowds.
-            builder: (context, child) {
-              final mq = MediaQuery.of(context);
-              return MediaQuery(
-                data: mq.copyWith(textScaler: const TextScaler.linear(1.0)),
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
+            // Shrink whole UI on TV: boxes often report density that makes fixed
+            // dp sizes (posters, type, padding) look oversized on a living-room screen.
+            builder: (context, child) => densifyUi(context, child),
             home: const HomeScreen(),
           );
         },

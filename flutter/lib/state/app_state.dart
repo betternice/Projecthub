@@ -89,7 +89,9 @@ class AppState extends ChangeNotifier {
       await _prefs?.setString('clientId', savedClientId);
     }
     tmdbKey = _prefs?.getString('tmdbKey');
-    source = mediaSourceFromKey(_prefs?.getString('mediaSource'));
+    // Cold start always opens "ทั้งหมด" — do not restore last OneDrive/local tab.
+    source = MediaSource.overview;
+    await _prefs?.setString('mediaSource', mediaSourceKey(source));
     localRootPath = _prefs?.getString('localRootPath');
     activeAccountId = _prefs?.getString('activeAccountId');
     lang = AppLang.fromCode(_prefs?.getString('appLang'));
@@ -616,8 +618,8 @@ class AppState extends ChangeNotifier {
     required int durationMs,
   }) async {
     if (durationMs <= 0) return;
-    // Ignore very start / near end
-    if (positionMs < 15000) {
+    // Ignore very start / near end (5s — was 15s and wiped resume too eagerly)
+    if (positionMs < 5000) {
       continueWatching = continueWatching.where((w) => w.ref.key != ref.key).toList();
       await _persistActiveProfileData();
       notifyListeners();

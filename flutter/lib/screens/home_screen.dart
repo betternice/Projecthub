@@ -111,9 +111,51 @@ class _HomeScreenState extends State<HomeScreen> {
     _search.addListener(() {
       if (mounted) setState(() {});
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncSourceAndLoad(force: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      // App open → always land on "ทั้งหมด"
+      await AppScope.of(context).openOverview();
+      if (!mounted) return;
+      await _syncSourceAndLoad(force: true, resetPath: true);
     });
+  }
+
+  Future<void> _returnToOverviewHome() async {
+    if (!mounted) return;
+    _search.clear();
+    _searchFocus.unfocus();
+    await AppScope.of(context).openOverview();
+    if (!mounted) return;
+    await _syncSourceAndLoad(force: true, resetPath: true);
+    if (_scroll.hasClients) {
+      await _scroll.animateTo(0, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+    }
+  }
+
+  /// Back / remote dismiss: search → folder up → overview → leave app.
+  /// Only runs when Home is the top route (not detail / player / profiles).
+  Future<void> _handleDismiss() async {
+    if (!mounted) return;
+    // Detail/player sit above Home — never treat their Back as "exit app".
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
+    if (_searchFocus.hasFocus || _query.isNotEmpty) {
+      _search.clear();
+      _searchFocus.unfocus();
+      if (mounted) setState(() {});
+      return;
+    }
+    if ((_folders?.length ?? 0) > 1) {
+      await _goUp();
+      return;
+    }
+    final app = AppScope.of(context);
+    if (app.source != MediaSource.overview) {
+      await _returnToOverviewHome();
+      return;
+    }
+    // Already on overview root — leave the app.
+    await SystemNavigator.pop();
   }
 
   @override
@@ -382,20 +424,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openProfiles() async {
-    final beforeId = AppScope.of(context).session?.id;
-    final beforeSource = AppScope.of(context).source;
     final openedLibrary = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ProfilesScreen()),
     );
     if (!mounted) return;
-    setState(() {});
-    final app = AppScope.of(context);
-    final switched = app.session?.id != beforeId || app.source != beforeSource;
-    // เปิดคลังจากหน้าคลัง — โหลดคลัง OneDrive ที่ root
-    await _syncSourceAndLoad(
-      force: true,
-      resetPath: openedLibrary == true || switched,
-    );
+    if (openedLibrary == true) {
+      // Explicitly opened a library from profiles — stay on that source.
+      await _syncSourceAndLoad(force: true, resetPath: true);
+    } else {
+      await _returnToOverviewHome();
+    }
   }
 
   Future<void> _pickLocalFolder() async {
@@ -438,6 +476,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+    // Stay on the page we came from (same as Detail "กลับ") — do not jump to overview.
     if (mounted) setState(() {});
   }
 
@@ -646,20 +685,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final favoriteItems = _visibleFavorites(app);
     return Scaffold(
       backgroundColor: themeBg,
-      body: Shortcuts(
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
+      // Always canPop:false — otherwise a Back from Detail can also pop Home/exit.
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          // Let pushed routes (detail/player) finish popping first.
+          await Future<void>.delayed(Duration.zero);
+          if (!mounted) return;
+          await _handleDismiss();
         },
-        child: Actions(
-          actions: {
-            DismissIntent: CallbackAction<DismissIntent>(onInvoke: (_) {
-              if ((_folders?.length ?? 0) > 1) {
-                _goUp();
-              }
-              return null;
-            }),
-          },
-          child: ColoredBox(
+        child: ColoredBox(
             color: themeBg,
             child: SafeArea(
               child: CustomScrollView(
@@ -832,7 +868,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 
@@ -842,7 +877,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeId = app.session?.id;
     final canGoUp = (_folders?.length ?? 0) > 1;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(56, 4, 56, 8),
+      padding: const EdgeInsets.fromLTRB(40, 2, 40, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -911,11 +946,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final crumbs = _folders ?? const [];
     final path = crumbs.map((c) => c.name).join('  /  ');
     return Padding(
-      padding: const EdgeInsets.fromLTRB(56, 18, 56, 8),
+      padding: const EdgeInsets.fromLTRB(40, 12, 40, 6),
       child: Row(
         children: [
-          Text('Niceflix', style: brandStyle(size: 40, color: themeAccent)),
-          const SizedBox(width: 28),
+          Text('Niceflix', style: brandStyle(size: 30, color: themeAccent)),
+          const SizedBox(width: 20),
           Expanded(
             child: Text(
               path,
@@ -927,7 +962,21 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(
             width: 220,
             height: 50,
-            child: TextField(
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                if (event.logicalKey == LogicalKeyboardKey.goBack ||
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  if (_searchFocus.hasFocus || _query.isNotEmpty) {
+                    _search.clear();
+                    _searchFocus.unfocus();
+                    setState(() {});
+                    return KeyEventResult.handled;
+                  }
+                }
+                return KeyEventResult.ignored;
+              },
+              child: TextField(
               controller: _search,
               focusNode: _searchFocus,
               style: bodyStyle(size: 15),
@@ -964,6 +1013,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderSide: const BorderSide(color: themeFocus, width: 2),
                 ),
               ),
+            ),
             ),
           ),
           const SizedBox(width: 12),

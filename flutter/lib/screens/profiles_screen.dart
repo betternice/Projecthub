@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_version.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../state/app_state.dart';
@@ -188,6 +189,21 @@ class _ProfilesScreenState extends State<ProfilesScreen> with SingleTickerProvid
                               const Spacer(flex: 3),
                             ],
                           ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Positioned(
+                    right: 28,
+                    bottom: 20,
+                    child: IgnorePointer(
+                      child: Text(
+                        appVersionLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: themeFaint,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.3,
                         ),
                       ),
                     ),

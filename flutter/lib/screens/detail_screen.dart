@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../format.dart';
 import '../library/overview.dart';
@@ -10,7 +9,6 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/remote_art.dart';
 import '../widgets/tv_focus.dart';
-import 'match_picker_screen.dart';
 import 'player_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -82,26 +80,6 @@ class _DetailScreenState extends State<DetailScreen> {
         overview: next.overview ?? _ref.overview,
       );
     });
-  }
-
-  Future<void> _editMatch() async {
-    final picked = await Navigator.of(context).push<MediaMatch>(
-      MaterialPageRoute(
-        builder: (_) => MatchPickerScreen(
-          filename: widget.item.name,
-          initialTitle: _detail?.title ?? _ref.title,
-          initialYear: _detail?.year ?? _ref.year,
-          currentMatch: _detail?.match,
-        ),
-      ),
-    );
-    if (picked == null || !mounted) return;
-    await applyManualMatch(
-      libraryKey: _ref.key,
-      filename: widget.item.name,
-      match: picked,
-    );
-    await _load(preferred: picked, bypassCache: true);
   }
 
   Future<void> _play(String title, {bool resume = false}) async {
@@ -177,18 +155,11 @@ class _DetailScreenState extends State<DetailScreen> {
     final poster = detail?.posterUrl ?? _ref.posterUrl ?? widget.item.thumbLarge ?? widget.item.thumbMedium;
     final artwork = detail?.backdropUrl ?? _ref.backdropUrl ?? poster;
 
-    return Scaffold(
+    return PopScope(
+      canPop: true,
+      child: Scaffold(
       backgroundColor: themeBg,
-      body: Shortcuts(
-        shortcuts: const {SingleActivator(LogicalKeyboardKey.goBack): DismissIntent()},
-        child: Actions(
-          actions: {
-            DismissIntent: CallbackAction<DismissIntent>(onInvoke: (_) {
-              Navigator.of(context).maybePop();
-              return null;
-            }),
-          },
-          child: Stack(
+      body: Stack(
             fit: StackFit.expand,
             children: [
               if (artwork != null)
@@ -294,12 +265,6 @@ class _DetailScreenState extends State<DetailScreen> {
                                   icon: liked ? Icons.favorite : Icons.favorite_border,
                                   onPressed: _toggleFavorite,
                                 ),
-                                TvButton(
-                                  label: app.tr('editMatch'),
-                                  filled: false,
-                                  icon: Icons.edit_outlined,
-                                  onPressed: _editMatch,
-                                ),
                               ],
                             ),
                             if (detail?.cast.isNotEmpty == true) ...[
@@ -338,7 +303,6 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             ],
           ),
-        ),
       ),
     );
   }
